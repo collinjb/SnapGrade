@@ -88,8 +88,13 @@ npm run build:web      # -> dist/
 ```
 
 Serve `dist/` from **the root of an HTTPS origin** and open it on your phone.
-Any static host works — Netlify, Vercel, Cloudflare Pages, GitHub Pages,
-`npx serve dist` behind a tunnel.
+Any static host works.
+
+The repo carries a `vercel.json`, so importing it at
+[vercel.com/new](https://vercel.com/new) needs no configuration: it builds
+with `npm run build:web`, serves `dist/`, rewrites unknown paths to the
+single document, and sets the cache headers the service worker needs. Every
+push to `main` redeploys.
 
 - **iOS**: Safari → Share → *Add to Home Screen*. (Only Safari can do this;
   Chrome on iOS cannot.) Camera access from an installed PWA needs iOS 14.3+.
