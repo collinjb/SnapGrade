@@ -33,6 +33,7 @@ export interface GradeCallResult {
 export type FailureCode =
   | 'no_key'
   | 'bad_key'
+  | 'bad_model'
   | 'rate_limited'
   | 'quota'
   | 'blocked'

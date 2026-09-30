@@ -43,6 +43,9 @@ export function SettingsScreen() {
   const [keyStatus, setKeyStatus] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(
     null,
   );
+  const activeModel = settings.models?.[provider.id] ?? provider.defaultModel;
+  const [modelDraft, setModelDraft] = useState(activeModel);
+  const [modelOpen, setModelOpen] = useState(false);
   const storedKey = useMemo(() => getApiKey(provider.id), [provider.id, keyRevision]);
 
   const saveKey = useCallback(() => {
@@ -73,6 +76,22 @@ export function SettingsScreen() {
           },
     );
   }, [keyDraft, provider]);
+
+  const saveModel = useCallback(
+    (value: string) => {
+      const next = value.trim();
+      updateSettings({
+        models: {
+          ...settings.models,
+          // Storing undefined means "use whatever this build ships with",
+          // so clearing the box is how you get back to the default.
+          [provider.id]: next && next !== provider.defaultModel ? next : undefined,
+        },
+      });
+      setModelOpen(false);
+    },
+    [provider, settings.models, updateSettings],
+  );
 
   return (
     <ScrollView
@@ -250,6 +269,49 @@ export function SettingsScreen() {
               </Pressable>
             </View>
           )}
+          <Pressable
+            onPress={() => {
+              setModelDraft(activeModel);
+              setModelOpen((v) => !v);
+            }}
+            hitSlop={6}
+            style={styles.modelRow}
+          >
+            <Text style={styles.modelLabel}>Model</Text>
+            <Text style={styles.modelValue} numberOfLines={1}>
+              {activeModel}
+            </Text>
+            <Text style={styles.linkButtonText}>{modelOpen ? 'Close' : 'Change'}</Text>
+          </Pressable>
+
+          {modelOpen ? (
+            <>
+              <TextInput
+                value={modelDraft}
+                onChangeText={setModelDraft}
+                placeholder={provider.defaultModel}
+                placeholderTextColor={colors.textDim}
+                autoCapitalize="none"
+                autoCorrect={false}
+                spellCheck={false}
+                style={styles.keyInput}
+              />
+              <Text style={styles.blurb}>
+                Providers retire model names on their own schedule. If grading starts failing with
+                a &quot;does not recognise the model&quot; error, paste the new id here — no new
+                build needed. Empty resets to {provider.defaultModel}.
+              </Text>
+              <View style={styles.keyActions}>
+                <Pressable style={styles.smallButton} onPress={() => saveModel(modelDraft)}>
+                  <Text style={styles.smallButtonText}>Save model</Text>
+                </Pressable>
+                <Pressable style={styles.linkButton} onPress={() => saveModel('')}>
+                  <Text style={styles.linkButtonText}>Reset</Text>
+                </Pressable>
+              </View>
+            </>
+          ) : null}
+
           {keyStatus ? (
             <Text
               style={[
@@ -319,7 +381,8 @@ export function SettingsScreen() {
       </Section>
 
       <Section title="Diagnostics">
-        <Diag label="Grader" value={`${provider.label} (${provider.defaultModel})`} />
+        <Diag label="Grader" value={provider.label} />
+        <Diag label="Model" value={activeModel} />
         <Diag label="API key" value={storedKey ? 'set' : 'not set'} />
         <Diag label="Platform" value={Platform.OS === 'web' ? 'web (PWA)' : Platform.OS} />
         <Diag label="Edge detector" value={detectorLabel} />
@@ -462,6 +525,22 @@ const styles = StyleSheet.create({
   },
   keyActions: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
   keyStatus: { fontSize: 13, fontWeight: '600', marginTop: 2 },
+  modelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    paddingTop: space.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    marginTop: space.xs,
+  },
+  modelLabel: { fontSize: 14, color: colors.textDim },
+  modelValue: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.text,
+  },
   keyMask: {
     fontSize: 14,
     color: colors.textDim,

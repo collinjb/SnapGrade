@@ -97,6 +97,13 @@ export const anthropicProvider: Provider = {
           false,
         );
       }
+      if (response.status === 404 || /model/i.test(body) && response.status === 400) {
+        throw new ProviderError(
+          `Claude does not recognise the model "${model}". Change it in Settings.`,
+          'bad_model',
+          false,
+        );
+      }
       if (response.status === 529) {
         throw new ProviderError('Claude is overloaded. Trying again shortly.', 'upstream_error', true, 20);
       }

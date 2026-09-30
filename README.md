@@ -343,6 +343,14 @@ Then `src/lib/scoring.ts` applies one more rule: anything below the
 confidence floor (60% by default, adjustable in Settings) is downgraded to
 `needs_review` regardless of what the model said.
 
+### When a model id is retired
+
+Providers rotate model names on their own schedule, and a hardcoded default
+eventually 404s. Settings → Grader → **Model** takes the new id directly, so
+a rotation is a text edit rather than a new build. The 404 handler reads the
+replacement out of the provider's own error body and names it in the
+message. Clearing the box restores whatever the build ships with.
+
 ### Switching models
 
 `src/lib/grading/provider.ts` defines the whole contract — take a prompt and

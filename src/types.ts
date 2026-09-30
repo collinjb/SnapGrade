@@ -140,4 +140,7 @@ export interface Settings {
   confidenceFloor: number;
   /** Which model grades the papers. The key itself lives in `apiKeys.ts`. */
   provider: 'gemini' | 'anthropic';
+  /** Per-provider model id, when the built-in default has been retired.
+   *  Editable in Settings so a rotation does not need a new build. */
+  models: { gemini?: string; anthropic?: string };
 }

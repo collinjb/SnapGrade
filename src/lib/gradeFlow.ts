@@ -160,6 +160,7 @@ async function runOne(id: string): Promise<void> {
       partialCredit: settings.partialCredit,
       providerId: settings.provider,
       apiKey: getApiKey(settings.provider),
+      model: settings.models?.[settings.provider],
     });
 
     const problems = normalizeGraded(result, settings.confidenceFloor);

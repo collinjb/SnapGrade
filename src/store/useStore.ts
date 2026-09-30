@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS: Settings = {
   hapticsEnabled: true,
   confidenceFloor: 0.6,
   provider: DEFAULT_PROVIDER,
+  models: {},
 };
 
 const DEFAULT_KEY: AnswerKey = { mode: 'ai', updatedAt: 0 };
@@ -272,7 +273,7 @@ export const useStore = create<Store>()(
     }),
     {
       name: 'snapgrade-store',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => zustandStorage),
       partialize: (s) => ({
         settings: s.settings,
@@ -300,6 +301,8 @@ export const useStore = create<Store>()(
             settings.provider ??= DEFAULT_PROVIDER;
           }
         }
+        // v4 made the model id editable.
+        if (version < 4 && state.settings) state.settings.models ??= {};
         return state as State;
       },
       onRehydrateStorage: () => (state) => {

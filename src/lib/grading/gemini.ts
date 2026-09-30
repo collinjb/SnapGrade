@@ -11,7 +11,7 @@
 import { classifyHttpError, ProviderError, type GradeCall, type GradeCallResult, type Provider } from './provider';
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
-const DEFAULT_MODEL = 'gemini-2.5-flash';
+const DEFAULT_MODEL = 'gemini-3.8-flash';
 const MAX_OUTPUT_TOKENS = 8192;
 
 /** The JSON contract, expressed the way Gemini wants it. Mirrors the schema
@@ -146,6 +146,21 @@ export const geminiProvider: Provider = {
 
     if (!response.ok) {
       const body = await response.text().catch(() => '');
+
+      // Google retires model ids on its own schedule, and the 404 body says
+      // which one to move to. Surface that as an instruction rather than as
+      // raw JSON, and point at the field that fixes it without a redeploy.
+      if (response.status === 404) {
+        const suggested = /models\/([\w.-]+)\s+for the latest/.exec(body)?.[1];
+        throw new ProviderError(
+          suggested
+            ? `Gemini has retired ${model}. Set the model to ${suggested} in Settings.`
+            : `Gemini does not recognise the model "${model}". Change it in Settings.`,
+          'bad_model',
+          false,
+        );
+      }
+
       // Google reports an exhausted free-tier quota as a 429 too, but the
       // body distinguishes it — and that one is worth saying plainly.
       if (response.status === 429 && /quota/i.test(body)) {
