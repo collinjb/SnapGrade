@@ -2,6 +2,7 @@
  *  the account upgrade. Anything that belongs on the capture path lives on the
  *  camera screen instead. */
 import { useCallback, useState } from 'react';
+import { Linking } from 'react-native';
 import {
   Alert,
   Platform,
@@ -19,7 +20,8 @@ import { detectorLabel } from '@/components/CameraView';
 import { pump, queueCounts, retryAllFailed } from '@/lib/gradeFlow';
 import { nativeScannerAvailable } from '@/lib/nativeScanner';
 import { skiaAvailable } from '@/lib/pageRender';
-import { supabaseConfigured, upgradeToEmail } from '@/lib/supabase';
+import { getApiKey, maskKey, setApiKey } from '@/lib/apiKeys';
+import { DEFAULT_PROVIDER, PROVIDER_LIST, getProvider } from '@/lib/grading';
 import { storageBackend } from '@/lib/storage';
 import { useStore } from '@/store/useStore';
 import { colors, radius, space } from '@/theme';
@@ -32,27 +34,35 @@ export function SettingsScreen() {
   const assignments = useStore((s) => s.assignments);
   const counts = queueCounts(pending);
 
-  const [email, setEmail] = useState('');
-  const [upgrading, setUpgrading] = useState(false);
+  const provider = getProvider(settings.provider ?? DEFAULT_PROVIDER);
+  const [keyDraft, setKeyDraft] = useState('');
+  const [editingKey, setEditingKey] = useState(false);
+  const storedKey = getApiKey(provider.id);
 
-  const onUpgrade = useCallback(async () => {
-    const trimmed = email.trim();
-    if (!trimmed.includes('@')) {
-      Alert.alert('Check that address', 'That does not look like an email address.');
+  const saveKey = useCallback(() => {
+    const next = keyDraft.trim();
+    if (next && !provider.looksLikeKey(next)) {
+      Alert.alert(
+        'That does not look right',
+        `A ${provider.label} key ${provider.keyHint.toLowerCase()}. Save it anyway?`,
+        [
+          { text: 'Let me fix it', style: 'cancel' },
+          {
+            text: 'Save anyway',
+            onPress: () => {
+              setApiKey(provider.id, next);
+              setEditingKey(false);
+              setKeyDraft('');
+            },
+          },
+        ],
+      );
       return;
     }
-    setUpgrading(true);
-    const { error } = await upgradeToEmail(trimmed);
-    setUpgrading(false);
-    if (error) Alert.alert('Could not link that address', error);
-    else {
-      Alert.alert(
-        'Check your email',
-        'Confirm the address and this device keeps everything you have scanned.',
-      );
-      setEmail('');
-    }
-  }, [email]);
+    setApiKey(provider.id, next);
+    setEditingKey(false);
+    setKeyDraft('');
+  }, [keyDraft, provider]);
 
   return (
     <ScrollView
@@ -135,18 +145,101 @@ export function SettingsScreen() {
         </Row>
       </Section>
 
-      <Section title="Sync">
-        <Row
-          title="Upload page images"
-          blurb="Keeps the scanned pages in your Supabase storage as well as on this device. Off by default — student work stays local."
-        >
-          <Switch
-            value={settings.uploadImages}
-            onValueChange={(v) => updateSettings({ uploadImages: v })}
-            trackColor={{ true: colors.accent }}
-          />
-        </Row>
+      <Section title="Grader">
+        <View style={styles.providerRow}>
+          {PROVIDER_LIST.map((p) => (
+            <Pressable
+              key={p.id}
+              onPress={() => updateSettings({ provider: p.id })}
+              style={[styles.providerChip, provider.id === p.id && styles.providerChipActive]}
+            >
+              <Text
+                style={[
+                  styles.providerChipText,
+                  provider.id === p.id && styles.providerChipTextActive,
+                ]}
+              >
+                {p.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
 
+        <View style={styles.keyBlock}>
+          <Text style={styles.rowTitle}>{provider.label} API key</Text>
+          <Text style={styles.blurb}>
+            Stored on this device only, and sent nowhere except {provider.label}. There is no
+            SnapGrade server.
+          </Text>
+
+          {editingKey || !storedKey ? (
+            <>
+              <TextInput
+                value={keyDraft}
+                onChangeText={setKeyDraft}
+                placeholder={provider.keyHint}
+                placeholderTextColor={colors.textDim}
+                autoCapitalize="none"
+                autoCorrect={false}
+                autoComplete="off"
+                spellCheck={false}
+                secureTextEntry
+                style={styles.keyInput}
+              />
+              <View style={styles.keyActions}>
+                <Pressable style={styles.smallButton} onPress={saveKey}>
+                  <Text style={styles.smallButtonText}>Save key</Text>
+                </Pressable>
+                <Pressable
+                  style={styles.linkButton}
+                  onPress={() => void Linking.openURL(provider.keyUrl)}
+                >
+                  <Text style={styles.linkButtonText}>Get a key</Text>
+                </Pressable>
+                {storedKey ? (
+                  <Pressable
+                    style={styles.linkButton}
+                    onPress={() => {
+                      setEditingKey(false);
+                      setKeyDraft('');
+                    }}
+                  >
+                    <Text style={styles.linkButtonText}>Cancel</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </>
+          ) : (
+            <View style={styles.keyActions}>
+              <Text style={styles.keyMask}>{maskKey(storedKey)}</Text>
+              <View style={styles.spacer} />
+              <Pressable style={styles.linkButton} onPress={() => setEditingKey(true)}>
+                <Text style={styles.linkButtonText}>Replace</Text>
+              </Pressable>
+              <Pressable
+                style={styles.linkButton}
+                onPress={() =>
+                  Alert.alert('Remove this key?', 'Grading stops until you add another.', [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                      text: 'Remove',
+                      style: 'destructive',
+                      onPress: () => {
+                        setApiKey(provider.id, '');
+                        setEditingKey(true);
+                      },
+                    },
+                  ])
+                }
+              >
+                <Text style={[styles.linkButtonText, { color: colors.incorrect }]}>Remove</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </Section>
+
+      <Section title="Queue">
         {counts.waiting > 0 || counts.working > 0 ? (
           <Pressable style={styles.action} onPress={() => pump()}>
             <Text style={styles.actionText}>
@@ -188,36 +281,30 @@ export function SettingsScreen() {
           </>
         ) : null}
 
-        <View style={styles.upgrade}>
-          <Text style={styles.upgradeTitle}>Sync across devices</Text>
-          <Text style={styles.blurb}>
-            You are signed in anonymously — everything works without an account. Add an email to
-            keep your assignments if you change phones.
-          </Text>
-          <View style={styles.upgradeRow}>
-            <TextInput
-              value={email}
-              onChangeText={setEmail}
-              placeholder="you@school.edu"
-              placeholderTextColor={colors.textDim}
-              autoCapitalize="none"
-              autoCorrect={false}
-              keyboardType="email-address"
-              style={styles.emailInput}
-            />
-            <Pressable
-              style={[styles.smallButton, (!supabaseConfigured || upgrading) && styles.disabled]}
-              disabled={!supabaseConfigured || upgrading}
-              onPress={() => void onUpgrade()}
-            >
-              <Text style={styles.smallButtonText}>{upgrading ? '…' : 'Link'}</Text>
-            </Pressable>
-          </View>
-        </View>
+        <Pressable
+          style={styles.action}
+          onPress={() =>
+            Alert.alert(
+              'Clear everything?',
+              'Every assignment, grade and queued scan on this device is deleted. Your settings and API key are kept.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Clear',
+                  style: 'destructive',
+                  onPress: () => useStore.getState().clearEverything(),
+                },
+              ],
+            )
+          }
+        >
+          <Text style={[styles.actionText, { color: colors.incorrect }]}>Clear everything</Text>
+        </Pressable>
       </Section>
 
       <Section title="Diagnostics">
-        <Diag label="Backend" value={supabaseConfigured ? 'connected' : 'not configured'} />
+        <Diag label="Grader" value={`${provider.label} (${provider.defaultModel})`} />
+        <Diag label="API key" value={storedKey ? 'set' : 'not set'} />
         <Diag label="Platform" value={Platform.OS === 'web' ? 'web (PWA)' : Platform.OS} />
         <Diag label="Edge detector" value={detectorLabel} />
         <Diag label="Perspective correction" value={skiaAvailable() ? 'Skia' : 'crop only'} />
@@ -329,11 +416,26 @@ const styles = StyleSheet.create({
   action: { padding: space.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border },
   actionText: { color: colors.accent, fontSize: 15, fontWeight: '700' },
 
-  upgrade: { padding: space.md, gap: space.sm },
-  upgradeTitle: { fontSize: 16, fontWeight: '600', color: colors.text },
-  upgradeRow: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
-  emailInput: {
+  providerRow: {
+    flexDirection: 'row',
+    gap: space.sm,
+    padding: space.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  providerChip: {
     flex: 1,
+    paddingVertical: space.sm + 2,
+    borderRadius: radius.pill,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    alignItems: 'center',
+  },
+  providerChipActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  providerChipText: { fontSize: 14, fontWeight: '600', color: colors.textDim },
+  providerChipTextActive: { color: colors.accent },
+  keyBlock: { padding: space.md, gap: space.sm },
+  keyInput: {
     height: 44,
     borderWidth: 1,
     borderColor: colors.border,
@@ -342,6 +444,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.text,
   },
+  keyActions: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
+  keyMask: {
+    fontSize: 14,
+    color: colors.textDim,
+    fontVariant: ['tabular-nums'],
+  },
+  linkButton: { paddingVertical: space.sm, paddingHorizontal: space.sm },
+  linkButtonText: { color: colors.accent, fontSize: 14, fontWeight: '600' },
+  spacer: { flex: 1 },
   smallButton: {
     paddingHorizontal: space.lg,
     height: 44,

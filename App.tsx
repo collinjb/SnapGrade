@@ -12,7 +12,6 @@ import { AnswerKeyScreen } from '@/screens/AnswerKeyScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { setupPwa } from '@/lib/pwa';
 import { waitForStorage } from '@/lib/storage';
-import { ensureSession } from '@/lib/supabase';
 import { colors } from '@/theme';
 import type { RootStackParamList } from '@/navigation';
 
@@ -36,11 +35,8 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       // Persisted state has to land before the first render, or the camera
-      // would briefly show the wrong assignment. Anonymous sign-in is fired
-      // in parallel and deliberately not awaited: the first grade call will
-      // wait for it if it has not finished, and nothing else needs it.
+      // would briefly show the wrong assignment.
       await waitForStorage();
-      void ensureSession();
       if (!cancelled) setReady(true);
     })();
     return () => {

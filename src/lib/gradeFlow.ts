@@ -11,19 +11,19 @@
  *  capture. */
 import NetInfo from '@react-native-community/netinfo';
 import { uuidv4 } from './id';
-import { gradePaper, GradeFailure } from './api';
+import { getApiKey } from './apiKeys';
+import { gradePaper, ProviderError } from './grading';
 import { processCapture } from './imaging';
 import { readBase64 } from './media';
 import { normalizeGraded } from './scoring';
-import { syncAssignment, syncResult } from './sync';
 import { tapError, tapGraded } from './haptics';
 import { useStore } from '@/store/useStore';
 import type { PendingScan, Quad, ScanResult } from '@/types';
 
 export { queueCounts, type QueueCounts } from './queueCounts';
 
-/** Grades in flight at once. Three keeps a stack moving without tripping the
- *  edge function's per-minute limit or saturating a classroom's wifi. */
+/** Grades in flight at once. Three keeps a stack moving without tripping a
+ *  free-tier rate limit or saturating a classroom's wifi. */
 const MAX_CONCURRENT = 3;
 
 /** Give up after this many tries so one broken image cannot retry forever. */
@@ -151,15 +151,18 @@ async function runOne(id: string): Promise<void> {
       return;
     }
 
+    const settings = useStore.getState().settings;
     const { result } = await gradePaper({
       imageBase64: base64,
       answerKeyMode: assignment.answerKey.mode,
       answerKeyText: assignment.answerKey.text,
       answerKeyImageBase64: assignment.answerKey.imageBase64,
-      partialCredit: useStore.getState().settings.partialCredit,
+      partialCredit: settings.partialCredit,
+      providerId: settings.provider,
+      apiKey: getApiKey(settings.provider),
     });
 
-    const problems = normalizeGraded(result, useStore.getState().settings.confidenceFloor);
+    const problems = normalizeGraded(result, settings.confidenceFloor);
     const detectedName = result.student_name?.trim() ?? '';
 
     const scan: ScanResult = {
@@ -181,12 +184,6 @@ async function runOne(id: string): Promise<void> {
     useStore.getState().addResult(scan);
     useStore.getState().removePending(id);
     tapGraded(problems.some((p) => p.status === 'needs_review'));
-
-    // Best-effort mirror to Supabase; never blocks the next scan.
-    void (async () => {
-      await syncAssignment(assignment);
-      await syncResult(scan, { uploadImage: useStore.getState().settings.uploadImages });
-    })();
   } catch (e) {
     handleGradeError(id, e);
   } finally {
@@ -199,7 +196,7 @@ function handleGradeError(id: string, e: unknown): void {
   const item = useStore.getState().getPending(id);
   if (!item) return;
 
-  const failure = e instanceof GradeFailure ? e : null;
+  const failure = e instanceof ProviderError ? e : null;
   const message = failure?.message ?? (e instanceof Error ? e.message : String(e));
 
   if (failure && !failure.retryable) {
@@ -207,9 +204,9 @@ function handleGradeError(id: string, e: unknown): void {
     return;
   }
 
-  // Rate limiting is not this scan's fault, so it does not burn an attempt —
-  // it just waits as long as the server asked.
-  if (failure?.code === 'rate_limited') {
+  // Rate limiting and quota are not this scan's fault, so neither burns an
+  // attempt — the scan just waits as long as the provider asked.
+  if (failure?.code === 'rate_limited' || failure?.code === 'quota') {
     requeue(id, item.attempts, (failure.retryAfterSeconds ?? 30) * 1000, message);
     return;
   }

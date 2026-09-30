@@ -7,7 +7,7 @@
  * design — run with `npm test`.
  */
 import assert from 'node:assert/strict';
-import { parseGraded, extractJsonObject } from '../supabase/functions/grade-paper/parse';
+import { parseGraded, extractJsonObject } from '../src/lib/grading/parse';
 import {
   assignmentStats,
   computeTotals,
@@ -25,6 +25,8 @@ import {
 import { buildDetailCsv, buildSummaryCsv, csvCell, exportFileName } from '../src/lib/csvFormat';
 import { queueCounts } from '../src/lib/queueCounts';
 import { GRID_H, GRID_W, detectPageInLuma, otsuThreshold, rgbaToLuma } from '../src/lib/pageDetect';
+import { looksMathy, toPlainMath } from '../src/lib/mathFormat';
+import { maskKey } from '../src/lib/apiKeys';
 import type { Assignment, Corners, PendingScan, ScanResult, ScoredProblem } from '../src/types';
 
 let passed = 0;
@@ -606,6 +608,47 @@ t('rgba converts to luma with Rec. 601 weights', () => {
   assert.equal(luma[1], 0);
   // Green reads much brighter than red, which is the whole point of weighting.
   assert.ok(luma[3]! > luma[2]! * 1.8, `red ${luma[2]}, green ${luma[3]}`);
+});
+
+// ===========================================================================
+// mathFormat.ts — only pay for a renderer when there is math
+// ===========================================================================
+
+t('plain answers do not trigger the math renderer', () => {
+  for (const plain of ['42', 'x = 3', '1/2', '-7', '3.14', '', 'no solution']) {
+    assert.equal(looksMathy(plain), false, `"${plain}" should be plain`);
+  }
+});
+
+t('real LaTeX does trigger it', () => {
+  for (const mathy of ['$\\frac{3}{4}$', 'x^{2}', '\\sqrt{50}', '$2\\pi r$', 'a_{1}']) {
+    assert.equal(looksMathy(mathy), true, `"${mathy}" should be mathy`);
+  }
+});
+
+t('the offline fallback stays readable', () => {
+  assert.equal(toPlainMath('$\\frac{3}{4}$'), '3/4');
+  assert.equal(toPlainMath('\\sqrt{50}'), '√(50)');
+  assert.equal(toPlainMath('x^{2} + 1'), 'x^2 + 1');
+  assert.equal(toPlainMath('3 \\times 4'), '3 × 4');
+  assert.equal(toPlainMath('x \\le 5'), 'x ≤ 5');
+  // Nothing left for a teacher to decode: no stray backslashes or braces.
+  const messy = toPlainMath('$\\frac{1}{2} \\pm \\sqrt{2}$');
+  assert.ok(!messy.includes('\\\\'), messy);
+  assert.ok(!/[{}]/.test(messy), messy);
+});
+
+// ===========================================================================
+// apiKeys.ts
+// ===========================================================================
+
+t('a displayed key never shows enough to be useful', () => {
+  const key = 'AIzaSyD-ExampleKeyMaterial1234567890abc';
+  const masked = maskKey(key);
+  assert.ok(masked.startsWith('AIzaSy'));
+  assert.ok(masked.endsWith(key.slice(-4)));
+  assert.ok(!masked.includes(key.slice(6, -4)), 'the middle must not survive');
+  assert.equal(maskKey('short'), '••••');
 });
 
 // ===========================================================================

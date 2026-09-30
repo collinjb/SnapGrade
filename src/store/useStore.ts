@@ -9,6 +9,7 @@ import { zustandStorage } from '@/lib/storage';
 import { uuidv4 } from '@/lib/id';
 import { setHapticsEnabled } from '@/lib/haptics';
 import { computeTotals, cycleOverride } from '@/lib/scoring';
+import { DEFAULT_PROVIDER } from '@/lib/grading';
 import type {
   AnswerKey,
   Assignment,
@@ -23,9 +24,9 @@ export const DEFAULT_SETTINGS: Settings = {
   partialCredit: false,
   autoCapture: true,
   scanEngine: 'vision',
-  uploadImages: false,
   hapticsEnabled: true,
   confidenceFloor: 0.6,
+  provider: DEFAULT_PROVIDER,
 };
 
 const DEFAULT_KEY: AnswerKey = { mode: 'ai', updatedAt: 0 };
@@ -86,6 +87,9 @@ interface Actions {
   /** Put a failed scan back in line for another try. */
   retryPending(id: string): void;
   clearFailedPending(): void;
+
+  /** Throw away every assignment, result and queued scan. */
+  clearEverything(): void;
 }
 
 export type Store = State & Actions;
@@ -255,10 +259,20 @@ export const useStore = create<Store>()(
 
       clearFailedPending: () =>
         set((s) => ({ pending: s.pending.filter((p) => p.status !== 'failed') })),
+
+      // Settings and the API key survive: the point is to clear student
+      // work, not to make the user set the app up again.
+      clearEverything: () =>
+        set({
+          assignments: [],
+          currentAssignmentId: null,
+          resultsByAssignment: {},
+          pending: [],
+        }),
     }),
     {
       name: 'snapgrade-store',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => zustandStorage),
       partialize: (s) => ({
         settings: s.settings,
@@ -276,6 +290,15 @@ export const useStore = create<Store>()(
         if (version < 2) {
           delete state.queue;
           state.pending = [];
+        }
+        // v3 dropped the Supabase backend. `uploadImages` no longer means
+        // anything, and settings gained a provider.
+        if (version < 3) {
+          const settings = state.settings as (Settings & { uploadImages?: boolean }) | undefined;
+          if (settings) {
+            delete settings.uploadImages;
+            settings.provider ??= DEFAULT_PROVIDER;
+          }
         }
         return state as State;
       },

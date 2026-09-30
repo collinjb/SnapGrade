@@ -75,8 +75,6 @@ export interface Assignment {
   name: string;
   createdAt: number;
   answerKey: AnswerKey;
-  /** Remote row id once synced; null while offline-only. */
-  remoteId?: string | null;
 }
 
 export interface ScanResult {
@@ -94,7 +92,6 @@ export interface ScanResult {
   /** Totals as returned by Claude, before overrides. */
   rawTotalEarned: number;
   rawTotalPossible: number;
-  remoteId?: string | null;
 }
 
 /** Where a captured page is in the background pipeline.
@@ -138,36 +135,9 @@ export interface Settings {
   autoCapture: boolean;
   /** Which capture pipeline to use. */
   scanEngine: 'vision' | 'native';
-  /** Upload page images to Supabase Storage as well as keeping them locally. */
-  uploadImages: boolean;
   hapticsEnabled: boolean;
   /** Below this, a problem is downgraded to "needs_review" regardless of status. */
   confidenceFloor: number;
-}
-
-export interface GradeRequest {
-  imageBase64: string;
-  answerKeyMode: AnswerKeyMode;
-  answerKeyText?: string;
-  answerKeyImageBase64?: string;
-  partialCredit: boolean;
-}
-
-export interface GradeResponse {
-  ok: true;
-  result: GradedPaper;
-  meta: { model: string; latencyMs: number; retried: boolean };
-}
-
-export interface GradeError {
-  ok: false;
-  error: string;
-  code:
-    | 'rate_limited'
-    | 'unauthorized'
-    | 'bad_request'
-    | 'upstream_error'
-    | 'parse_error'
-    | 'server_error';
-  retryAfterSeconds?: number;
+  /** Which model grades the papers. The key itself lives in `apiKeys.ts`. */
+  provider: 'gemini' | 'anthropic';
 }

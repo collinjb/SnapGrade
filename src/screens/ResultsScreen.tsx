@@ -23,7 +23,6 @@ import { MarkOverlay } from '@/components/MarkOverlay';
 import { ProblemRow } from '@/components/ProblemRow';
 import { computeTotals } from '@/lib/scoring';
 import { tapLight } from '@/lib/haptics';
-import { syncResult } from '@/lib/sync';
 import { useImageUri } from '@/lib/useImageUri';
 import { useStore } from '@/store/useStore';
 import { colors, radius, space } from '@/theme';
@@ -43,7 +42,6 @@ export function ResultsScreen() {
   );
   const toggleProblemOverride = useStore((s) => s.toggleProblemOverride);
   const updateResult = useStore((s) => s.updateResult);
-  const uploadImages = useStore((s) => s.settings.uploadImages);
 
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
@@ -57,12 +55,6 @@ export function ResultsScreen() {
       if (!result) return;
       tapLight();
       toggleProblemOverride(result.assignmentId, result.id, index);
-      // Push the corrected score up in the background; the local state is
-      // already right, so nothing waits on this.
-      void Promise.resolve().then(() => {
-        const fresh = useStore.getState().getResult(result.assignmentId, result.id);
-        if (fresh) void syncResult(fresh, { uploadImage: false });
-      });
     },
     [result, toggleProblemOverride],
   );
@@ -76,10 +68,6 @@ export function ResultsScreen() {
       studentName: next,
       studentNameIsPlaceholder: false,
     });
-    void syncResult(
-      { ...result, studentName: next, studentNameIsPlaceholder: false },
-      { uploadImage: false },
-    );
   }, [nameDraft, result, updateResult]);
 
   if (!result || !totals) {

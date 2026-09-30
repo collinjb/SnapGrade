@@ -8,42 +8,15 @@ import { memo, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, type TextStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { colors } from '@/theme';
+import {
+  KATEX_AUTORENDER,
+  KATEX_CSS,
+  KATEX_JS,
+  looksMathy,
+  toPlainMath,
+} from '@/lib/mathFormat';
 
-/** Pinned so a CDN change cannot silently alter rendering. */
-const KATEX_VERSION = '0.16.11';
-const KATEX_CSS = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.css`;
-const KATEX_JS = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/katex.min.js`;
-const KATEX_AUTORENDER = `https://cdn.jsdelivr.net/npm/katex@${KATEX_VERSION}/dist/contrib/auto-render.min.js`;
-
-/** LaTeX commands and delimiters worth spinning up a renderer for. */
-const MATH_PATTERN =
-  /(\$[^$]+\$)|\\\(|\\\[|\\frac|\\sqrt|\\pi|\\times|\\div|\\le|\\ge|\\neq|\\pm|\\cdot|\\sum|\\int|\^\{|_\{/;
-
-export function looksMathy(text: string): boolean {
-  return MATH_PATTERN.test(text);
-}
-
-/** Strip LaTeX down to something readable, for the plain-text fallback. */
-export function toPlainMath(text: string): string {
-  return text
-    .replace(/\$\$?/g, '')
-    .replace(/\\frac\{([^{}]*)\}\{([^{}]*)\}/g, '$1/$2')
-    .replace(/\\sqrt\{([^{}]*)\}/g, '√($1)')
-    .replace(/\^\{([^{}]*)\}/g, '^$1')
-    .replace(/_\{([^{}]*)\}/g, '_$1')
-    .replace(/\\times/g, '×')
-    .replace(/\\div/g, '÷')
-    .replace(/\\cdot/g, '·')
-    .replace(/\\pm/g, '±')
-    .replace(/\\pi/g, 'π')
-    .replace(/\\le(?![a-z])/g, '≤')
-    .replace(/\\ge(?![a-z])/g, '≥')
-    .replace(/\\neq/g, '≠')
-    .replace(/\\left|\\right/g, '')
-    .replace(/[{}]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+export { looksMathy, toPlainMath };
 
 function escapeForHtml(text: string): string {
   return text

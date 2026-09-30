@@ -39,7 +39,9 @@ import {
   type Evaluation,
 } from '@/lib/autoCapture';
 import { cornersToPixels, type Corners } from '@/lib/documentDetector';
+import { hasApiKey } from '@/lib/apiKeys';
 import { enqueueCapture, queueCounts, startGradingWorker } from '@/lib/gradeFlow';
+import { getProvider } from '@/lib/grading';
 import { subscribeAngularSpeed } from '@/lib/motion';
 import { tapCapture, tapLight } from '@/lib/haptics';
 import { scanWithNativeScanner } from '@/lib/nativeScanner';
@@ -82,6 +84,11 @@ export function CameraScreen() {
   const [isFocused, setIsFocused] = useState(true);
   const [readinessText, setReadinessText] = useState(readinessCopy.searching);
 
+  // `hasApiKey` reads device storage rather than the store, so re-check it
+  // every time this screen comes forward — the user may have just added one.
+  const [keyPresent, setKeyPresent] = useState(() => hasApiKey(settings.provider));
+  const provider = getProvider(settings.provider);
+
   // Imperative handles keep per-frame animation out of React's render path.
   const overlayRef = useRef<EdgeOverlayHandle>(null);
   const shutterRef = useRef<ShutterHandle>(null);
@@ -105,6 +112,7 @@ export function CameraScreen() {
   useFocusEffect(
     useCallback(() => {
       setIsFocused(true);
+      setKeyPresent(hasApiKey(useStore.getState().settings.provider));
       tracker.current.resetAll();
       motionTracker.current.reset();
       overlayRef.current?.clear();
@@ -266,6 +274,16 @@ export function CameraScreen() {
             <Text style={styles.permButtonText}>Allow camera</Text>
           </Pressable>
         ) : null}
+
+        {/* Without this the screen is a dead end: no camera means no way to
+            reach Settings, and Settings is where the API key goes. */}
+        <Pressable
+          style={styles.permSecondary}
+          onPress={() => navigation.navigate('Settings')}
+          accessibilityRole="button"
+        >
+          <Text style={styles.permSecondaryText}>Open settings</Text>
+        </Pressable>
       </View>
     );
   }
@@ -301,7 +319,22 @@ export function CameraScreen() {
           failedCount={counts.failed}
           onPress={() => navigation.navigate('AnswerKey')}
         />
-        {showFirstRunTip ? (
+        {!keyPresent ? (
+          // Capture still works without a key — the scans just queue up and
+          // fail. Saying so here is better than letting the tray fill with
+          // red chips.
+          <Pressable
+            style={styles.warning}
+            onPress={() => navigation.navigate('Settings')}
+            accessibilityRole="button"
+            accessibilityLabel={`Add your ${provider.label} API key`}
+          >
+            <Text style={styles.warningText}>
+              Add your {provider.label} API key to start grading
+            </Text>
+            <Text style={styles.warningHint}>Tap to open Settings</Text>
+          </Pressable>
+        ) : showFirstRunTip ? (
           <Pressable
             style={styles.tip}
             onPress={() => useStore.getState().dismissFirstRunTip()}
@@ -404,6 +437,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.camText,
   },
   permButtonText: { color: colors.camBg, fontSize: 16, fontWeight: '700' },
+  permSecondary: { paddingVertical: space.md, paddingHorizontal: space.lg },
+  permSecondaryText: { color: colors.camTextDim, fontSize: 15, fontWeight: '600' },
 
   top: {
     position: 'absolute',
@@ -421,6 +456,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(105,56,239,0.92)',
   },
   tipText: { color: '#fff', fontSize: 14, fontWeight: '600', textAlign: 'center' },
+  warning: {
+    alignSelf: 'center',
+    paddingVertical: space.sm,
+    paddingHorizontal: space.lg,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(247,144,9,0.94)',
+    alignItems: 'center',
+  },
+  warningText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  warningHint: { color: 'rgba(255,255,255,0.85)', fontSize: 11, marginTop: 2 },
 
   bottom: {
     position: 'absolute',

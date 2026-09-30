@@ -25,8 +25,10 @@
     "../src/lib/scoring.ts",
     "../src/lib/autoCapture.ts",
     "../src/lib/csvFormat.ts",
-    "../supabase/functions/grade-paper/parse.ts",
     "../src/lib/queueCounts.ts",
-    "../src/lib/pageDetect.ts"
+    "../src/lib/pageDetect.ts",
+    "../src/lib/grading/parse.ts",
+    "../src/lib/mathFormat.ts",
+    "../src/lib/apiKeys.ts"
   ]
 }

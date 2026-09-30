@@ -6,9 +6,10 @@ steady, and comes back with a score, marks on the page, and a one-line
 explanation of every mistake. One tap returns you to the camera for the next
 paper.
 
-- **Expo (React Native, TypeScript)** on the device
-- **Supabase** for auth, storage and the Edge Function that talks to Claude
-- **Claude Sonnet 5.5** does the grading. The API key never leaves the server.
+- **Expo (React Native, TypeScript)**, and nothing else — no server, no
+  database, no accounts, nothing to deploy.
+- **Gemini** grades the papers by default; **Claude** is one tap away in
+  Settings. You bring your own API key and it stays on your device.
 
 Ships two ways: a native iOS/Android app, and an installable **PWA** you can
 add to the home screen without building anything. Same code, same screens —
@@ -26,7 +27,7 @@ see [Running it as a web app](#running-it-as-a-web-app).
                         ▼                               │
         de-skew + contrast + resize                     │
                         ▼                               │
-          grade-paper (Edge Function) ──▶ Claude        │
+            Gemini / Claude, called direct        │
                         ▼                               │
               score lands in the tray ──────────────────┘
                         │
@@ -64,19 +65,19 @@ build is the same project.
 
 ```bash
 npm install
-cp .env.example .env
+npm run build:web
 ```
 
-Fill in `.env` with your Supabase URL and anon key, then set up the backend
-(below) and build a dev client:
+Serve `dist/`, open it on your phone, paste a Gemini key into Settings, and
+you are grading. For the native app instead:
 
 ```bash
 npx expo prebuild --clean
 npx expo run:ios     # or: npx expo run:android
 ```
 
-Expo Go will not work — the app needs VisionCamera, MMKV and Skia, which are
-native modules. A development build is required.
+Expo Go will not work for the native build — it needs VisionCamera, MMKV and
+Skia. A development build is required. The web build has no such constraint.
 
 ---
 
@@ -150,85 +151,40 @@ npm run icons          # rewrites public/icons/*.png
 
 ---
 
-## 1. Supabase setup
+## Setup
 
-### Create the project
+There is no backend, no database and nothing to deploy. Two steps:
 
-Make a project at [supabase.com](https://supabase.com), then link it:
+1. Get a **Gemini API key** from [AI Studio](https://aistudio.google.com/apikey).
+   The free tier needs no card.
+2. Open SnapGrade → **Settings → Grader**, paste it in, hit *Save key*.
 
-```bash
-npx supabase login
-npx supabase link --project-ref YOUR-PROJECT-REF
-```
+That is the whole setup. The key is stored on your device (`localStorage` in
+a browser, MMKV on a phone) and is sent nowhere except Google. If you would
+rather use Claude, switch the provider in the same place and paste an
+Anthropic key instead.
 
-### Push the schema
+### Where the key lives, and the trade
 
-```bash
-npx supabase db push
-```
+Earlier versions of this app put the key behind a Supabase Edge Function so
+it never reached the device. That is the right shape for an app you hand to
+other people — one shared key you have to protect. It is the wrong shape for
+a personal tool: it means a Postgres instance, row-level security policies,
+anonymous auth and a deploy step, all to hold one string.
 
-This creates `assignments`, `results`, `problems` and `api_usage`, the
-`check_rate_limit` function, the private `scans` storage bucket, and
-row-level security on all of it. Every table is scoped to `auth.uid()`, so
-the anon key shipped in the app can only ever reach that user's own rows.
+So the key is on the device now, and the trade is explicit:
 
-### Enable anonymous sign-in
-
-Dashboard → **Authentication → Sign In / Providers → Anonymous sign-ins** →
-on. This is what makes the first launch frictionless: no account, no login
-wall, and the same user can be upgraded to email later without losing data.
-
-### Set the Anthropic key as a secret
-
-```bash
-npx supabase secrets set ANTHROPIC_API_KEY=sk-ant-...
-```
-
-Optionally tune the per-user budget:
-
-```bash
-npx supabase secrets set RATE_LIMIT_PER_MINUTE=12 RATE_LIMIT_PER_DAY=400
-```
-
-**Never put the Anthropic key in `.env`, `app.json`, or anything with an
-`EXPO_PUBLIC_` prefix** — those are bundled into the app and readable by
-anyone who downloads it.
-
-### Deploy the Edge Function
-
-```bash
-npx supabase functions deploy grade-paper
-```
-
-To iterate locally instead:
-
-```bash
-cp supabase/.env.local.example supabase/.env.local   # add your key
-npx supabase functions serve grade-paper --env-file supabase/.env.local
-```
+- **Fine** for your own key on your own phone, which is what this is.
+- **Fine** for a PWA other teachers use — each of them enters *their own*
+  key, so nobody's key is exposed to anybody else.
+- **Not fine** if you ever want to ship this with a key you pay for. At that
+  point you need the proxy back: one serverless function that holds the key
+  and forwards the request. The provider interface in
+  `src/lib/grading/provider.ts` is the seam to do it at.
 
 ---
 
-## 2. App environment
-
-`.env` in the project root:
-
-```
-EXPO_PUBLIC_SUPABASE_URL=https://YOUR-PROJECT-REF.supabase.co
-EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOi...
-```
-
-Both are safe to ship: the anon key only grants what RLS allows. Expo inlines
-`EXPO_PUBLIC_*` at build time, so **rebuild after changing them** — a Metro
-restart is not enough, and for the web build that means re-running
-`npm run build:web` and redeploying.
-
-Without them the app still runs; scans queue locally and grading reports a
-clear configuration error.
-
----
-
-## 3. Building a dev client
+## Building the native app
 
 ### Locally
 
@@ -305,13 +261,16 @@ If Skia is unavailable the pipeline degrades to a bounding-box crop.
 ## The grading prompt
 
 The full system prompt lives in
-[`supabase/functions/grade-paper/prompt.ts`](supabase/functions/grade-paper/prompt.ts).
-It is assembled per request from the answer-key mode and the partial-credit
-setting. In summary, it instructs Claude to:
+[`src/lib/grading/prompt.ts`](src/lib/grading/prompt.ts). It is assembled per
+request from the answer-key mode and the partial-credit setting, and it is
+the same prompt whichever model you point it at. In summary, it instructs the
+model to:
 
 - **Output only JSON** matching the schema below — no fences, no preamble.
-  The request also prefills the assistant turn with `{`, which is the cheapest
-  reliable way to keep the response parseable.
+  How hard that has to be enforced depends on the provider: Gemini is given a
+  `responseSchema` and is *constrained* to emit the right shape, while Claude
+  is steered with an assistant prefill of `{`, the cheapest reliable way to
+  stop it opening with "Here's the grade:".
 - **Read handwriting in context**, treat crossed-out and overwritten work as
   not-the-answer, and look twice before failing an answer over a missing
   negative sign or dropped exponent.
@@ -356,22 +315,32 @@ setting. In summary, it instructs Claude to:
 `bbox` is normalized 0–1 with the origin at the page's top-left; the results
 screen places its check and X marks from it.
 
-### What the server does with the reply
+### What happens to the reply
 
-`supabase/functions/grade-paper/parse.ts` treats the output as untrusted:
+[`src/lib/grading/parse.ts`](src/lib/grading/parse.ts) treats the output as
+untrusted — a guaranteed *shape* says nothing about sane *numbers*:
 strips fences, finds the outermost balanced object while ignoring braces
 inside strings, repairs a trailing comma, coerces wrong-typed fields, clamps
 every number into range, and **recomputes the totals** rather than trusting
 the model's arithmetic. A `correct` verdict is forced to full marks and a
 `needs_review` to zero, so the status and the points can never disagree.
 
-If parsing still fails, the function shows the model its own bad output and
-asks once more, then gives up with a `parse_error` rather than inventing a
-grade.
+If parsing fails, the grader asks once more with a blunter instruction, then
+gives up with a `parse_error` rather than inventing a grade. A response that
+was cut off mid-object skips the retry — it would just truncate again.
 
-On the device, `src/lib/scoring.ts` applies one more rule: anything below the
+Then `src/lib/scoring.ts` applies one more rule: anything below the
 confidence floor (60% by default, adjustable in Settings) is downgraded to
 `needs_review` regardless of what the model said.
+
+### Switching models
+
+`src/lib/grading/provider.ts` defines the whole contract — take a prompt and
+some images, return text. Adding a third provider is one file. Because the
+app flags what it is unsure about rather than guessing, a cheaper model
+degrades into *more things to review*, not into wrong grades — so the way to
+compare two of them is to scan the same stack twice and look at both the
+error rate and the review rate.
 
 ---
 
@@ -452,12 +421,18 @@ src/
     nativeScanner.ts            the OS document-scanner engine
     gradeFlow.ts                the background grading queue and its workers
     queueCounts.ts              pure badge arithmetic over the queue
-    api.ts                      the grade-paper call and its error taxonomy
+  lib/grading/
+    index.ts                    build prompt -> call model -> parse -> retry
+    provider.ts                 the whole provider contract, ~40 lines
+    gemini.ts                   default; constrained by a responseSchema
+    anthropic.ts                steered by an assistant prefill
+    prompt.ts                   the full grading prompt
+    parse.ts                    defensive parsing of the model's output
     scoring.ts                  totals, overrides, confidence floor, class stats
     csvFormat.ts                pure CSV building (RFC 4180 quoting)
     csv.ts                      write the file + native share sheet
-    sync.ts                     best-effort mirror to Supabase
-    supabase.ts                 client + anonymous auth + email upgrade
+    apiKeys.ts                  the user's own key, kept out of the store
+    mathFormat.ts               is-this-math, and the no-KaTeX fallback
     storage.ts      / .web.ts   MMKV, AsyncStorage, or localStorage
     haptics.ts / id.ts
   store/useStore.ts             Zustand + persist
@@ -476,14 +451,7 @@ scripts/
   make-icons.mjs                draws the icon PNGs, no image library
   postexport-pwa.mjs            injects the install tags into the built HTML
 
-supabase/
-  migrations/20260929000000_init.sql      tables, RLS, storage, rate limiting
-  functions/grade-paper/
-    index.ts                    auth → rate limit → Claude → parse → respond
-    prompt.ts                   the full grading prompt
-    parse.ts                    defensive parsing of the model's output
-
-tests/run.ts                    49 assertions over the pure logic (npm test)
+tests/run.ts                    53 assertions over the pure logic (npm test)
 ```
 
 ## Tests
@@ -497,7 +465,8 @@ and wrong-typed model output; score totals and manual overrides; the
 confidence floor; class statistics; the auto-capture rules (steady window,
 cooldown, the re-arm guard that stops a sheet being graded twice, too-far /
 too-close / skewed, gyroscope gate); the page detector against synthetic
-frames (Otsu thresholding, noise, clutter, wrong aspect, blank frames); queue
+frames (Otsu thresholding, noise, clutter, wrong aspect, blank frames); the
+math-vs-plain-text split and its offline fallback; API-key masking; queue
 counts; and CSV quoting.
 
 The modules under test import no native code — that is enforced by
@@ -548,13 +517,16 @@ plain Node with no simulator, emulator or mocking framework.
   readable — `\frac{3}{4}` becomes `3/4`) when offline. To make it fully
   offline, vendor `katex.min.css`, `katex.min.js` and `auto-render.min.js`
   into `assets/katex/` and point `MathText.tsx` at the local copies.
-- **Grading is not free.** Each scan is one Sonnet call with an image. The
-  per-user rate limit in the Edge Function is the backstop; watch the
-  `api_usage` table for actual token spend.
+- **Grading is not free past the free tier.** Each scan is one call with an
+  image attached. Gemini's free tier covers a lot of scanning; beyond it, or
+  on Claude, you are paying per page. Nothing in the app caps your spend —
+  the provider's own limits are the only backstop.
 - **No app icon or splash yet.** Expo's defaults are in place; drop your own
   into `assets/` and point `app.json` at them before shipping.
-- **Anonymous users are per-device.** Link an email in Settings before
-  changing phones, or the assignments on the old device stay there.
+- **Everything is per-device.** There is no account and no sync, by design.
+  Export to CSV before you switch phones, or the grades stay on the old one.
+- **Your API key sits in device storage.** That is the trade for having no
+  backend. See [Where the key lives](#where-the-key-lives-and-the-trade).
 
 ---
 
@@ -570,7 +542,4 @@ npm test             # pure-logic test suite
 npm run web          # dev server for the web build
 npm run build:web    # production PWA into dist/
 npm run icons        # regenerate the app icons
-npm run db:push      # push migrations to Supabase
-npm run fn:deploy    # deploy the grade-paper function
-npm run fn:serve     # run the function locally
 ```
