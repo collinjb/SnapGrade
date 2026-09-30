@@ -15,8 +15,11 @@ export function effectiveStatus(p: ScoredProblem): ProblemStatus {
 export function effectivePoints(p: ScoredProblem): number {
   if (p.override === 'correct') return p.points_possible;
   if (p.override === 'incorrect') return 0;
-  // An unresolved "needs review" scores nothing until the teacher rules on it.
-  if (p.status === 'needs_review') return 0;
+  // An unresolved "needs review" scores nothing until the teacher rules on
+  // it, and an unattempted problem scores nothing by definition. Both still
+  // count toward the total, which is what makes 17/100 out of 21 attempted
+  // come out right.
+  if (p.status === 'needs_review' || p.status === 'blank') return 0;
   return clamp(p.points_earned, 0, p.points_possible);
 }
 
@@ -28,6 +31,10 @@ export interface Totals {
   correct: number;
   incorrect: number;
   partial: number;
+  /** Printed but not attempted — the tail of a timed test. */
+  blank: number;
+  /** Everything the student actually put an answer to. */
+  attempted: number;
 }
 
 export function computeTotals(problems: ScoredProblem[]): Totals {
@@ -37,6 +44,7 @@ export function computeTotals(problems: ScoredProblem[]): Totals {
   let correct = 0;
   let incorrect = 0;
   let partial = 0;
+  let blank = 0;
 
   for (const p of problems) {
     earned += effectivePoints(p);
@@ -51,6 +59,9 @@ export function computeTotals(problems: ScoredProblem[]): Totals {
       case 'partial':
         partial++;
         break;
+      case 'blank':
+        blank++;
+        break;
       default:
         needsReview++;
     }
@@ -64,6 +75,8 @@ export function computeTotals(problems: ScoredProblem[]): Totals {
     correct,
     incorrect,
     partial,
+    blank,
+    attempted: problems.length - blank,
   };
 }
 
@@ -85,7 +98,9 @@ export function normalizeGraded(paper: GradedPaper, confidenceFloor: number): Sc
     const possible = Number.isFinite(p.points_possible) ? Math.max(0, p.points_possible) : 1;
     const earned = Number.isFinite(p.points_earned) ? clamp(p.points_earned, 0, possible) : 0;
     const confidence = Number.isFinite(p.confidence) ? clamp(p.confidence, 0, 1) : 0;
-    const lowConfidence = confidence < confidenceFloor;
+    // A blank is unambiguous: there is nothing there. Flagging it for review
+    // would bury the teacher in the tail of every timed test.
+    const lowConfidence = confidence < confidenceFloor && p.status !== 'blank';
 
     return {
       ...p,
@@ -140,6 +155,9 @@ export function assignmentStats(results: ScanResult[]): AssignmentStats {
       const entry = missed.get(key) ?? { missed: 0, of: 0, questionText: p.question_text };
       entry.of += 1;
       const status = effectiveStatus(p);
+      // A blank does not mean the class found the problem hard, only that
+      // they did not reach it — counting those would make the last page of
+      // every timed test look like the worst-understood material.
       if (status === 'incorrect' || status === 'partial') entry.missed += 1;
       if (!entry.questionText && p.question_text) entry.questionText = p.question_text;
       missed.set(key, entry);

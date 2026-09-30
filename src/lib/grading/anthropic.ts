@@ -14,7 +14,8 @@ import { classifyHttpError, ProviderError, type GradeCall, type GradeCallResult,
 const ENDPOINT = 'https://api.anthropic.com/v1/messages';
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
 const API_VERSION = '2023-06-01';
-const MAX_TOKENS = 8192;
+/** Matches the Gemini budget: a long drill page needs the room. */
+const MAX_TOKENS = 16384;
 
 /** Prepended to the response before parsing, since the model continues from
  *  it rather than repeating it. */

@@ -5,6 +5,9 @@
  *  carries the image and the run's specific settings. */
 
 export interface PromptOptions {
+  /** Ask for the leanest possible output. Set automatically on a retry after
+   *  the first attempt ran out of room. */
+  terse?: boolean;
   /** How the correct answers are established for this run. */
   answerKeyMode: 'ai' | 'scan' | 'typed';
   /** Mode C: the teacher's typed answers, verbatim. */
@@ -22,7 +25,7 @@ export const JSON_SCHEMA_TEXT = `{
       "question_text": string,
       "student_answer": string,
       "correct_answer": string,
-      "status": "correct" | "incorrect" | "partial" | "needs_review",
+      "status": "correct" | "incorrect" | "partial" | "blank" | "needs_review",
       "points_earned": number,
       "points_possible": number,
       "explanation": string,
@@ -51,19 +54,26 @@ Rules for the fields:
 - "number": the problem number exactly as printed on the page ("1", "4b",
   "iii"). If the page has no numbering, use sequential "1", "2", "3" in reading
   order.
-- "question_text": the problem as written, transcribed compactly. Use LaTeX
-  between single dollar signs for anything that needs it: $\\frac{3}{4}$,
-  $x^{2}$, $\\sqrt{50}$. Plain text otherwise.
+- "question_text": the problem as written, as briefly as it can be written.
+  For a drill item that is just the expression: "7 x 8", "45 - 19". Use LaTeX
+  between single dollar signs only where it is genuinely needed:
+  $\\frac{3}{4}$, $x^{2}$, $\\sqrt{50}$. Never restate the instructions, and
+  never pad it into a sentence. On a page with many problems you may leave it
+  empty — the app shows the student's answer beside the correct one, which is
+  usually the whole story.
 - "student_answer": what the student actually put down as their final answer,
-  transcribed faithfully — including a wrong answer, an unsimplified form, or
-  an empty string if they left it blank.
+  transcribed faithfully — including a wrong answer or an unsimplified form.
+  Empty string if they wrote nothing.
 - "correct_answer": the correct answer, in the same notation style.
 - "status": see the grading rules below.
 - "points_earned" / "points_possible": numbers. Default to 1 point per problem
   unless the page states point values, in which case honor the page.
-- "explanation": ONE short sentence naming the specific mistake, written to the
-  student ("Subtracted before multiplying"). Empty string when status is
-  "correct".
+- "explanation": ONE short sentence naming the specific mistake, written to
+  the student ("Subtracted before multiplying"). Leave it EMPTY when the
+  status is "correct" or "blank", and also when the mistake is self-evident
+  from seeing the two answers side by side — on an arithmetic drill, "7 x 8
+  is 56, not 54" tells the teacher nothing they cannot see. Spend
+  explanations only where the error is interesting.
 - "confidence": your genuine 0–1 confidence in this problem's grade,
   accounting for both how legible the work is and how sure you are of the
   correct answer.
@@ -125,6 +135,10 @@ ${
 Guessing is worse than saying so — a teacher can fix a flagged problem in one
 tap, but a confidently wrong grade goes into the gradebook unnoticed.
 
+A blank is NOT an uncertainty. If the student plainly wrote nothing, that is
+"blank" and you should be confident about it — do not send a page of
+unattempted problems to the teacher as a page of things to check.
+
 Use status "needs_review" with points_earned 0 and a confidence that reflects
 your actual doubt whenever:
 
@@ -139,15 +153,44 @@ your actual doubt whenever:
 Put the reason in "explanation" ("Answer is illegible — could be 7 or 9").
 Include the problem in the list; never silently drop one.
 
-# Scope
+# Every printed problem counts
 
-- Grade only the problems actually visible on this page. Do not invent
-  problems, do not continue a sequence past what you can see.
+This is the rule teachers get wrong about automated grading, so be careful
+with it.
+
+Report EVERY problem printed on the page, in order, whether or not the
+student wrote anything. A problem left blank is reported with status
+"blank", an empty "student_answer", and points_earned 0 — but with its
+normal "points_possible", because it still counts against them.
+
+So "total_possible" is the number of problems ON THE PAGE, not the number
+the student attempted. A timed test of 100 problems where the student
+reached 21 and got 17 of those right scores 17 out of 100. Reporting only
+the attempted ones, and calling it 17 out of 21, would be badly wrong — that
+is the difference between a failing grade and an A.
+
+Do not stop early on a long page. If there are 100 problems, return 100
+entries. Work steadily down the page; being brief in "question_text" and
+"explanation" is how you make room for all of them.
+
+- Grade only problems actually printed on this page. Do not invent problems
+  and do not continue a sequence past what you can see.
 - If the image contains no gradable math work at all, return an empty
   "problems" array with totals of 0 and student_name null.
 
 ${answerKeySection(opts)}
+${
+  opts.terse
+    ? `
+# Room is tight
 
+The previous attempt ran out of output before it finished the page. Return
+EVERY problem, but strip the response to the bone: "question_text" and
+"explanation" must both be empty strings for every single problem. The
+numbers, the statuses and the boxes are what matter.
+`
+    : ''
+}
 Return only the JSON object.`;
 }
 

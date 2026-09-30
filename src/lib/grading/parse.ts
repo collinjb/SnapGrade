@@ -6,7 +6,7 @@
  *  contradicts the points, and arithmetic that does not add up are all normal
  *  and all handled rather than thrown. */
 
-export type Status = 'correct' | 'incorrect' | 'partial' | 'needs_review';
+export type Status = 'correct' | 'incorrect' | 'partial' | 'blank' | 'needs_review';
 
 export interface GradedProblem {
   number: string;
@@ -87,7 +87,7 @@ export function extractJsonObject(raw: string): string | null {
   return null;
 }
 
-const STATUSES: Status[] = ['correct', 'incorrect', 'partial', 'needs_review'];
+const STATUSES: Status[] = ['correct', 'incorrect', 'partial', 'blank', 'needs_review'];
 
 export function coercePaper(
   value: unknown,
@@ -131,7 +131,7 @@ function coerceProblem(value: unknown, options: ParseOptions): GradedProblem | n
   const points_earned =
     status === 'correct'
       ? points_possible
-      : status === 'incorrect' || status === 'needs_review'
+      : status === 'incorrect' || status === 'needs_review' || status === 'blank'
         ? 0
         : clamp(num(v.points_earned, 0), 0, points_possible);
 
@@ -147,7 +147,8 @@ function coerceProblem(value: unknown, options: ParseOptions): GradedProblem | n
     status,
     points_earned: round2(points_earned),
     points_possible: round2(points_possible),
-    explanation: status === 'correct' ? '' : str(v.explanation, 300),
+    // Nothing to explain about a problem nobody attempted.
+    explanation: status === 'correct' || status === 'blank' ? '' : str(v.explanation, 300),
     confidence: clamp(num(v.confidence, 0), 0, 1),
     bbox: { x, y, w: clamp(num(bboxIn.w, 0), 0, 1 - x), h: clamp(num(bboxIn.h, 0), 0, 1 - y) },
   };

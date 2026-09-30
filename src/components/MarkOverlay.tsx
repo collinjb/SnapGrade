@@ -18,13 +18,22 @@ const glyph = (status: string): string => {
       return '✗';
     case 'partial':
       return '½';
+    case 'blank':
+      return '–';
     default:
       return '?';
   }
 };
 
+/** One problem, carrying the index it has in the full list so a filtered
+ *  overlay can still report the right one when tapped. */
+export interface MarkEntry {
+  problem: ScoredProblem;
+  index: number;
+}
+
 interface Props {
-  problems: ScoredProblem[];
+  entries: MarkEntry[];
   /** Rendered size of the page image, in points. */
   width: number;
   height: number;
@@ -34,7 +43,7 @@ interface Props {
 }
 
 export const MarkOverlay = memo(function MarkOverlay({
-  problems,
+  entries,
   width,
   height,
   onPressProblem,
@@ -42,7 +51,7 @@ export const MarkOverlay = memo(function MarkOverlay({
 }: Props) {
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
-      {problems.map((p, i) => {
+      {entries.map(({ problem: p, index: i }, position) => {
         const status = effectiveStatus(p);
         // A zero-size bbox means the model could not place the problem; park
         // those marks down the left margin rather than stacking them at 0,0.
@@ -50,7 +59,7 @@ export const MarkOverlay = memo(function MarkOverlay({
         const cx = hasBox ? (p.bbox.x + p.bbox.w / 2) * width : 0.06 * width;
         const cy = hasBox
           ? (p.bbox.y + p.bbox.h / 2) * height
-          : ((i + 0.5) / Math.max(problems.length, 1)) * height;
+          : ((position + 0.5) / Math.max(entries.length, 1)) * height;
 
         return (
           <Pressable

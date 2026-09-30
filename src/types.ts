@@ -1,7 +1,15 @@
 /** Shared domain types. The grading shapes mirror the JSON contract the
  *  edge function enforces on Claude's output (see supabase/functions/grade-paper/prompt.ts). */
 
-export type ProblemStatus = 'correct' | 'incorrect' | 'partial' | 'needs_review';
+/** `blank` is its own verdict, not a kind of wrong. On a timed test most
+ *  papers end with a run of unattempted problems: they score nothing, but a
+ *  teacher reads "ran out of time" very differently from "got it wrong". */
+export type ProblemStatus =
+  | 'correct'
+  | 'incorrect'
+  | 'partial'
+  | 'blank'
+  | 'needs_review';
 
 /** A point normalized to the camera frame or page: 0–1 on each axis, origin
  *  at the top-left. */
@@ -126,6 +134,17 @@ export interface PendingScan {
   /** Epoch ms before which no further attempt should be made. */
   nextAttemptAt?: number;
   lastError?: string;
+}
+
+/** What grading has actually cost, in the only units the provider bills on.
+ *  Kept because guessing at token counts from the outside is hopeless, and a
+ *  teacher deciding whether this is affordable deserves a real number. */
+export interface UsageTotals {
+  scans: number;
+  inputTokens: number;
+  outputTokens: number;
+  /** Epoch ms of the first scan counted, so the figure has a period. */
+  since: number;
 }
 
 export interface Settings {

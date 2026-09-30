@@ -12,7 +12,10 @@ import { classifyHttpError, ProviderError, type GradeCall, type GradeCallResult,
 
 const ENDPOINT = 'https://generativelanguage.googleapis.com/v1beta/models';
 const DEFAULT_MODEL = 'gemini-3.8-flash';
-const MAX_OUTPUT_TOKENS = 8192;
+/** A 100-problem timed drill needs roughly 7k output tokens even written
+ *  tersely, and 8k left no headroom at all — the response truncated and
+ *  failed to parse. Flash models allow far more than this. */
+const MAX_OUTPUT_TOKENS = 32768;
 
 /** The JSON contract, expressed the way Gemini wants it. Mirrors the schema
  *  in `prompt.ts`; if one changes the other has to. */
@@ -31,7 +34,7 @@ const RESPONSE_SCHEMA = {
           correct_answer: { type: 'STRING' },
           status: {
             type: 'STRING',
-            enum: ['correct', 'incorrect', 'partial', 'needs_review'],
+            enum: ['correct', 'incorrect', 'partial', 'blank', 'needs_review'],
           },
           points_earned: { type: 'NUMBER' },
           points_possible: { type: 'NUMBER' },
@@ -48,15 +51,17 @@ const RESPONSE_SCHEMA = {
             required: ['x', 'y', 'w', 'h'],
           },
         },
+        // question_text and explanation are deliberately optional: on a
+        // 100-problem drill they are the difference between fitting in the
+        // output budget and truncating. Everything that decides the grade
+        // stays required.
         required: [
           'number',
-          'question_text',
           'student_answer',
           'correct_answer',
           'status',
           'points_earned',
           'points_possible',
-          'explanation',
           'confidence',
           'bbox',
         ],
@@ -65,7 +70,7 @@ const RESPONSE_SCHEMA = {
     total_earned: { type: 'NUMBER' },
     total_possible: { type: 'NUMBER' },
   },
-  required: ['student_name', 'problems', 'total_earned', 'total_possible'],
+  required: ['problems', 'total_earned', 'total_possible'],
 } as const;
 
 interface GeminiPart {

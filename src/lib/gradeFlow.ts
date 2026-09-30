@@ -152,7 +152,7 @@ async function runOne(id: string): Promise<void> {
     }
 
     const settings = useStore.getState().settings;
-    const { result } = await gradePaper({
+    const { result, inputTokens, outputTokens } = await gradePaper({
       imageBase64: base64,
       answerKeyMode: assignment.answerKey.mode,
       answerKeyText: assignment.answerKey.text,
@@ -162,6 +162,8 @@ async function runOne(id: string): Promise<void> {
       apiKey: getApiKey(settings.provider),
       model: settings.models?.[settings.provider],
     });
+
+    useStore.getState().recordUsage(inputTokens, outputTokens);
 
     const problems = normalizeGraded(result, settings.confidenceFloor);
     const detectedName = result.student_name?.trim() ?? '';

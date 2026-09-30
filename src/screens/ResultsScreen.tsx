@@ -19,9 +19,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-import { MarkOverlay } from '@/components/MarkOverlay';
+import { MarkOverlay, type MarkEntry } from '@/components/MarkOverlay';
 import { ProblemRow } from '@/components/ProblemRow';
-import { computeTotals } from '@/lib/scoring';
+import { computeTotals, effectiveStatus } from '@/lib/scoring';
 import { tapLight } from '@/lib/haptics';
 import { useImageUri } from '@/lib/useImageUri';
 import { useStore } from '@/store/useStore';
@@ -47,8 +47,22 @@ export function ResultsScreen() {
   const [nameDraft, setNameDraft] = useState('');
   const [selected, setSelected] = useState<number | null>(null);
   const pageUri = useImageUri(result?.imageUri);
+  /** On a hundred-problem drill, marking every correct answer buries the
+   *  four that are wrong. Long pages open filtered; short ones do not. */
+  const [issuesOnly, setIssuesOnly] = useState<boolean | null>(null);
 
   const totals = useMemo(() => (result ? computeTotals(result.problems) : null), [result]);
+
+  const problems = result?.problems;
+  const filterOn = issuesOnly ?? (problems ? problems.length > 30 : false);
+
+  /** Entries keep their original index so a tap still edits the right one. */
+  const entries = useMemo<MarkEntry[]>(() => {
+    if (!problems) return [];
+    const all = problems.map((problem, index) => ({ problem, index }));
+    if (!filterOn) return all;
+    return all.filter((e) => effectiveStatus(e.problem) !== 'correct');
+  }, [filterOn, problems]);
 
   const onToggle = useCallback(
     (index: number) => {
@@ -186,7 +200,7 @@ export function ResultsScreen() {
             pointerEvents="box-none"
           >
             <MarkOverlay
-              problems={result.problems}
+              entries={entries}
               width={displayedWidth}
               height={displayedHeight}
               onPressProblem={onToggle}
@@ -201,12 +215,35 @@ export function ResultsScreen() {
             <Tally label="Partial" value={totals.partial} color={colors.partial} />
           ) : null}
           <Tally label="Wrong" value={totals.incorrect} color={colors.incorrect} />
+          {totals.blank > 0 ? (
+            <Tally label="Blank" value={totals.blank} color={colors.blank} />
+          ) : null}
           {totals.needsReview > 0 ? (
             <Tally label="Review" value={totals.needsReview} color={colors.review} />
           ) : null}
         </View>
 
-        {result.problems.map((p, i) => (
+        {totals.blank > 0 ? (
+          <Text style={styles.attemptNote}>
+            Answered {totals.attempted} of {result.problems.length}
+          </Text>
+        ) : null}
+
+        {result.problems.length > 8 ? (
+          <Pressable
+            style={styles.filterToggle}
+            onPress={() => setIssuesOnly(!filterOn)}
+            accessibilityRole="button"
+          >
+            <Text style={styles.filterToggleText}>
+              {filterOn
+                ? `Showing ${entries.length} to look at · show all ${result.problems.length}`
+                : `Showing all ${result.problems.length} · show only what needs a look`}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {entries.map(({ problem: p, index: i }) => (
           <ProblemRow
             key={`${p.number}-${i}`}
             problem={p}
@@ -216,6 +253,13 @@ export function ResultsScreen() {
             selected={selected === i}
           />
         ))}
+
+        {filterOn && entries.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>Every answer correct</Text>
+            <Text style={styles.emptyBody}>Nothing on this page needs your attention.</Text>
+          </View>
+        ) : null}
 
         {result.problems.length === 0 ? (
           <View style={styles.empty}>
@@ -317,6 +361,20 @@ const styles = StyleSheet.create({
     letterSpacing: 0.4,
   },
 
+  attemptNote: {
+    textAlign: 'center',
+    fontSize: 14,
+    color: colors.textDim,
+    marginTop: -space.sm,
+    marginBottom: space.md,
+  },
+  filterToggle: {
+    marginHorizontal: space.lg,
+    marginBottom: space.md,
+    paddingVertical: space.sm,
+    alignItems: 'center',
+  },
+  filterToggleText: { fontSize: 14, fontWeight: '600', color: colors.accent },
   empty: { padding: space.xxl, alignItems: 'center', gap: space.sm },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
   emptyBody: { fontSize: 14, color: colors.textDim, textAlign: 'center' },

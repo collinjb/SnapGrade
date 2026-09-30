@@ -25,6 +25,7 @@ export const ProblemRow = memo(function ProblemRow({
   const status = effectiveStatus(problem);
   const tint = statusColor(status);
   const isCorrect = status === 'correct';
+  const isBlank = status === 'blank';
 
   return (
     <Pressable
@@ -61,10 +62,10 @@ export const ProblemRow = memo(function ProblemRow({
 
         <View style={styles.answers}>
           <View style={styles.answerCol}>
-            <Text style={styles.answerLabel}>Their answer</Text>
+            <Text style={styles.answerLabel}>{isBlank ? 'Left blank' : 'Their answer'}</Text>
             <MathText
               text={problem.student_answer || '—'}
-              color={isCorrect ? colors.text : colors.incorrect}
+              color={isCorrect ? colors.text : isBlank ? colors.textDim : colors.incorrect}
               fontSize={15}
             />
           </View>

@@ -296,6 +296,92 @@ t('stats on an empty assignment are empty, not NaN', () => {
 });
 
 // ===========================================================================
+// the timed-test rule: score out of what was printed, not what was attempted
+// ===========================================================================
+
+/** A 100-problem speed drill: 21 attempted, 17 of those right. */
+function timedTest(): ScoredProblem[] {
+  const out: ScoredProblem[] = [];
+  for (let i = 1; i <= 100; i++) {
+    if (i <= 17) out.push(problem({ number: String(i), status: 'correct', points_earned: 1 }));
+    else if (i <= 21)
+      out.push(problem({ number: String(i), status: 'incorrect', points_earned: 0 }));
+    else
+      out.push(
+        problem({ number: String(i), status: 'blank', student_answer: '', points_earned: 0 }),
+      );
+  }
+  return out;
+}
+
+t('17 right out of 21 attempted on a 100-problem test scores 17/100', () => {
+  const totals = computeTotals(timedTest());
+  assert.equal(totals.earned, 17);
+  assert.equal(totals.possible, 100, 'unattempted problems still count against them');
+  assert.equal(totals.percent, 17);
+  assert.equal(totals.correct, 17);
+  assert.equal(totals.incorrect, 4);
+  assert.equal(totals.blank, 79);
+  assert.equal(totals.attempted, 21);
+});
+
+t('a blank is never flagged for review, however unsure the model was', () => {
+  const normalized = normalizeGraded(
+    {
+      student_name: null,
+      total_earned: 0,
+      total_possible: 2,
+      problems: [
+        { ...problem({ number: '1', status: 'blank', student_answer: '' }), confidence: 0.1 },
+        { ...problem({ number: '2', status: 'correct' }), confidence: 0.1 },
+      ],
+    },
+    0.6,
+  );
+  // Low confidence downgrades a real answer but not an empty space: there is
+  // nothing there to be unsure about, and the tail of a timed test would
+  // otherwise bury the teacher in things to check.
+  assert.equal(normalized[0]!.status, 'blank');
+  assert.equal(normalized[1]!.status, 'needs_review');
+  assert.equal(computeTotals(normalized).needsReview, 1);
+});
+
+t('a teacher can still override a blank to correct', () => {
+  const p = problem({ status: 'blank', student_answer: '', points_possible: 1 });
+  assert.equal(computeTotals([p]).earned, 0);
+  assert.equal(computeTotals([{ ...p, override: 'correct' }]).earned, 1);
+});
+
+t('most-missed ignores the unattempted tail', () => {
+  // Everyone ran out of time at the same place. That is a pacing fact, not a
+  // sign the class misunderstood the last twenty problems.
+  const stats = assignmentStats([
+    { ...scan('s1', []), problems: timedTest() },
+    { ...scan('s2', []), problems: timedTest() },
+  ]);
+  assert.ok(
+    stats.mostMissed.every((m) => Number(m.number) <= 21),
+    `blank problems leaked into most-missed: ${stats.mostMissed.map((m) => m.number).join(',')}`,
+  );
+  assert.equal(stats.mostMissed[0]!.number, '18');
+});
+
+t('the parser keeps blanks and scores them zero', () => {
+  const paper = parseGraded(
+    '{"student_name":"Sam","problems":[' +
+      '{"number":"1","status":"correct","points_earned":1,"points_possible":1,"confidence":0.98},' +
+      '{"number":"2","status":"blank","student_answer":"","points_earned":9,"points_possible":1,"confidence":0.9}' +
+      '],"total_earned":1,"total_possible":2}',
+  );
+  assert.ok(paper);
+  assert.equal(paper.problems[1]!.status, 'blank');
+  assert.equal(paper.problems[1]!.points_earned, 0, 'a blank cannot be talked into scoring');
+  assert.equal(paper.problems[1]!.explanation, '');
+  assert.equal(paper.total_earned, 1);
+  assert.equal(paper.total_possible, 2);
+});
+
+// ===========================================================================
 // autoCapture.ts — when the shutter is allowed to fire
 // ===========================================================================
 

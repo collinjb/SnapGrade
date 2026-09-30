@@ -31,6 +31,7 @@ export function SettingsScreen() {
   const settings = useStore((s) => s.settings);
   const updateSettings = useStore((s) => s.updateSettings);
   const pending = useStore((s) => s.pending);
+  const usage = useStore((s) => s.usage);
   const assignments = useStore((s) => s.assignments);
   const counts = queueCounts(pending);
 
@@ -380,6 +381,33 @@ export function SettingsScreen() {
         </Pressable>
       </Section>
 
+      <Section title="Usage">
+        <View style={styles.keyBlock}>
+          <Text style={styles.blurb}>
+            What this account has actually been billed for. Providers price per million
+            tokens, so multiply these by the rate on your plan — the free tier bills nothing
+            until you pass its limits.
+          </Text>
+          <View style={styles.usageRow}>
+            <UsageStat label="Papers graded" value={usage.scans.toLocaleString()} />
+            <UsageStat label="Input tokens" value={compactNumber(usage.inputTokens)} />
+            <UsageStat label="Output tokens" value={compactNumber(usage.outputTokens)} />
+          </View>
+          {usage.scans > 0 ? (
+            <>
+              <Text style={styles.blurb}>
+                Averaging {Math.round(usage.inputTokens / usage.scans).toLocaleString()} in and{' '}
+                {Math.round(usage.outputTokens / usage.scans).toLocaleString()} out per paper,
+                counted since {new Date(usage.since).toLocaleDateString()}.
+              </Text>
+              <Pressable onPress={() => useStore.getState().resetUsage()} hitSlop={8}>
+                <Text style={styles.linkButtonText}>Reset the count</Text>
+              </Pressable>
+            </>
+          ) : null}
+        </View>
+      </Section>
+
       <Section title="Diagnostics">
         <Diag label="Grader" value={provider.label} />
         <Diag label="Model" value={activeModel} />
@@ -431,6 +459,22 @@ function StepButton({ label, onPress }: { label: string; onPress: () => void }) 
     <Pressable onPress={onPress} hitSlop={8} style={styles.step}>
       <Text style={styles.stepText}>{label}</Text>
     </Pressable>
+  );
+}
+
+/** Thousands separators get unreadable past a few million. */
+function compactNumber(n: number): string {
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`;
+  return `${(n / 1_000_000).toFixed(2)}M`;
+}
+
+function UsageStat({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={styles.usageStat}>
+      <Text style={styles.usageValue}>{value}</Text>
+      <Text style={styles.usageLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -525,6 +569,21 @@ const styles = StyleSheet.create({
   },
   keyActions: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
   keyStatus: { fontSize: 13, fontWeight: '600', marginTop: 2 },
+  usageRow: { flexDirection: 'row', gap: space.lg, marginVertical: space.xs },
+  usageStat: { gap: 2 },
+  usageValue: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: colors.text,
+    fontVariant: ['tabular-nums'],
+  },
+  usageLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textDim,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   modelRow: {
     flexDirection: 'row',
     alignItems: 'center',

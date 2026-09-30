@@ -20,6 +20,9 @@ export const colors = {
   incorrect: '#F04438',
   partial: '#2E90FA',
   review: '#F79009',
+  /** Not attempted: deliberately grey, so a page of them reads as quiet
+   *  rather than as a wall of errors. */
+  blank: '#98A2B3',
 
   accent: '#6938EF',
   accentSoft: '#F4F0FF',
@@ -33,6 +36,8 @@ export const statusColor = (s: string): string => {
       return colors.incorrect;
     case 'partial':
       return colors.partial;
+    case 'blank':
+      return colors.blank;
     default:
       return colors.review;
   }
@@ -46,6 +51,8 @@ export const statusLabel = (s: string): string => {
       return 'Incorrect';
     case 'partial':
       return 'Partial credit';
+    case 'blank':
+      return 'Not attempted';
     default:
       return 'Needs review';
   }

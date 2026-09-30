@@ -84,7 +84,6 @@ export async function gradePaper(request: GradeRequest): Promise<GradeOutcome> {
     partialCredit: request.partialCredit,
   };
 
-  const systemPrompt = buildSystemPrompt(promptOptions);
   const userInstruction = buildUserInstruction(promptOptions);
   const startedAt = Date.now();
 
@@ -93,14 +92,20 @@ export async function gradePaper(request: GradeRequest): Promise<GradeOutcome> {
   let outputTokens = 0;
   let model = provider.defaultModel;
 
-  // Two attempts. Gemini's response schema makes a second pass almost never
-  // necessary; Claude, working from the prompt alone, occasionally needs it.
+  // Two attempts. Gemini's response schema makes a parse failure almost
+  // impossible; what does happen on a long page is the response running out
+  // of room, and the second attempt answers that by asking for less per
+  // problem rather than by asking again identically.
+  let ranOutOfRoom = false;
+
   for (let attempt = 0; attempt < 2; attempt++) {
+    const systemPrompt = buildSystemPrompt({ ...promptOptions, terse: ranOutOfRoom });
+
     const call = await provider.grade({
       imageBase64: request.imageBase64,
       answerKeyImageBase64: request.answerKeyImageBase64,
       systemPrompt:
-        attempt === 0
+        attempt === 0 || ranOutOfRoom
           ? systemPrompt
           : `${systemPrompt}\n\nYour previous reply could not be parsed as JSON. Return ONLY the JSON object: start with { and end with }, no code fences, no commentary, no trailing commas.`,
       userInstruction,
@@ -126,14 +131,20 @@ export async function gradePaper(request: GradeRequest): Promise<GradeOutcome> {
       };
     }
 
-    // A truncated object will never parse, and asking again identically will
-    // truncate in the same place. Stop rather than burn a second call.
-    if (call.truncated) break;
+    // A truncated object will never parse, and asking again identically
+    // would truncate in the same place — so the retry asks for a leaner
+    // answer instead. Only worth doing once.
+    if (call.truncated) {
+      if (ranOutOfRoom) break;
+      ranOutOfRoom = true;
+    }
   }
 
   console.warn('[snapgrade] unparseable grader output:', lastText.slice(0, 600));
   throw new ProviderError(
-    'The grader returned something we could not read.',
+    ranOutOfRoom
+      ? 'That page has more problems than the grader could get through in one go.'
+      : 'The grader returned something we could not read.',
     'parse_error',
     true,
   );

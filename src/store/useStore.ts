@@ -13,6 +13,7 @@ import { DEFAULT_PROVIDER } from '@/lib/grading';
 import type {
   AnswerKey,
   Assignment,
+  UsageTotals,
   PendingScan,
   PendingStatus,
   ScanResult,
@@ -53,6 +54,8 @@ interface State {
 
   /** True until the first-launch tooltip has been dismissed. */
   showFirstRunTip: boolean;
+
+  usage: UsageTotals;
 }
 
 interface Actions {
@@ -91,6 +94,9 @@ interface Actions {
 
   /** Throw away every assignment, result and queued scan. */
   clearEverything(): void;
+
+  recordUsage(inputTokens: number, outputTokens: number): void;
+  resetUsage(): void;
 }
 
 export type Store = State & Actions;
@@ -105,6 +111,7 @@ export const useStore = create<Store>()(
       resultsByAssignment: {},
       pending: [],
       showFirstRunTip: true,
+      usage: { scans: 0, inputTokens: 0, outputTokens: 0, since: 0 },
 
       markHydrated: () => set({ hydrated: true }),
 
@@ -258,6 +265,18 @@ export const useStore = create<Store>()(
           ),
         })),
 
+      recordUsage: (inputTokens, outputTokens) =>
+        set((s) => ({
+          usage: {
+            scans: s.usage.scans + 1,
+            inputTokens: s.usage.inputTokens + inputTokens,
+            outputTokens: s.usage.outputTokens + outputTokens,
+            since: s.usage.since || Date.now(),
+          },
+        })),
+
+      resetUsage: () => set({ usage: { scans: 0, inputTokens: 0, outputTokens: 0, since: 0 } }),
+
       clearFailedPending: () =>
         set((s) => ({ pending: s.pending.filter((p) => p.status !== 'failed') })),
 
@@ -273,7 +292,7 @@ export const useStore = create<Store>()(
     }),
     {
       name: 'snapgrade-store',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => zustandStorage),
       partialize: (s) => ({
         settings: s.settings,
@@ -282,6 +301,7 @@ export const useStore = create<Store>()(
         resultsByAssignment: s.resultsByAssignment,
         pending: s.pending,
         showFirstRunTip: s.showFirstRunTip,
+        usage: s.usage,
       }),
       migrate: (persisted, version) => {
         const state = persisted as Partial<State> & { queue?: unknown };
@@ -303,6 +323,8 @@ export const useStore = create<Store>()(
         }
         // v4 made the model id editable.
         if (version < 4 && state.settings) state.settings.models ??= {};
+        // v5 started counting tokens.
+        if (version < 5) state.usage ??= { scans: 0, inputTokens: 0, outputTokens: 0, since: 0 };
         return state as State;
       },
       onRehydrateStorage: () => (state) => {
