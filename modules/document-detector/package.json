@@ -1,0 +1,7 @@
+{
+  "name": "document-detector",
+  "version": "1.0.0",
+  "description": "Page edge detection as a VisionCamera frame processor plugin.",
+  "main": "index.ts",
+  "private": true
+}

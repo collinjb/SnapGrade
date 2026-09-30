@@ -1,0 +1,70 @@
+{
+  "expo": {
+    "name": "SnapGrade",
+    "slug": "snapgrade",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "snapgrade",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.snapgrade.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "SnapGrade uses the camera to photograph and grade paper tests.",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.snapgrade.app",
+      "edgeToEdgeEnabled": true,
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-dev-client",
+      [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "SnapGrade uses the camera to photograph and grade paper tests.",
+          "enableCodeScanner": false,
+          "enableMicrophonePermission": false
+        }
+      ],
+      "react-native-document-scanner-plugin",
+      [
+        "expo-build-properties",
+        {
+          "ios": {
+            "deploymentTarget": "15.1"
+          },
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
+      ]
+    ],
+    "experiments": {
+      "tsconfigPaths": true,
+      "typedRoutes": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./public/icons/favicon-64.png",
+      "name": "SnapGrade",
+      "shortName": "SnapGrade",
+      "themeColor": "#000000",
+      "backgroundColor": "#000000",
+      "display": "standalone",
+      "orientation": "portrait",
+      "description": "Point your phone at a paper math test and get it graded.",
+      "lang": "en"
+    }
+  }
+}
