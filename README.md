@@ -90,7 +90,12 @@ npm run build:web      # -> dist/
 Serve `dist/` from **the root of an HTTPS origin** and open it on your phone.
 Any static host works.
 
-The repo carries a `vercel.json`, so importing it at
+The repo carries a `vercel.json` (kept strictly to Vercel's schema — it
+rejects unknown keys, so the reasoning behind each setting lives here rather
+than in the file): the catch-all rewrite exists because React Navigation
+emits real hrefs like `/Camera`, which would 404 on refresh without it, and
+`sw.js` is marked `must-revalidate` because a stale service worker pins the
+whole app to an old build. Importing it at
 [vercel.com/new](https://vercel.com/new) needs no configuration: it builds
 with `npm run build:web`, serves `dist/`, rewrites unknown paths to the
 single document, and sets the cache headers the service worker needs. Every

@@ -3,16 +3,9 @@
   "framework": null,
   "buildCommand": "npm run build:web",
   "outputDirectory": "dist",
-  "rewrites": [
-    {
-      "comment": "React Navigation emits real hrefs (/Camera, /Settings), so a refresh or a shared link has to resolve to the single document. Vercel checks the filesystem before rewrites, so real assets are unaffected.",
-      "source": "/(.*)",
-      "destination": "/index.html"
-    }
-  ],
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }],
   "headers": [
     {
-      "comment": "A stale service worker pins the whole app to an old build, so it must always be revalidated.",
       "source": "/sw.js",
       "headers": [
         { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" },
@@ -24,7 +17,6 @@
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }]
     },
     {
-      "comment": "Expo fingerprints these, so a stale hit is never the wrong file.",
       "source": "/_expo/static/(.*)",
       "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }]
     }
