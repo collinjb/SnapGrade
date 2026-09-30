@@ -8,7 +8,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   Pressable,
@@ -40,6 +39,7 @@ import {
 } from '@/lib/autoCapture';
 import { cornersToPixels, type Corners } from '@/lib/documentDetector';
 import { hasApiKey } from '@/lib/apiKeys';
+import { ask, notify } from '@/lib/dialog';
 import { enqueueCapture, queueCounts, startGradingWorker } from '@/lib/gradeFlow';
 import { getProvider } from '@/lib/grading';
 import { subscribeAngularSpeed } from '@/lib/motion';
@@ -226,7 +226,7 @@ export function CameraScreen() {
       enqueueCapture(photo.uri, { width: photo.width, height: photo.height }, quad);
     } catch (e) {
       console.warn('[snapgrade] capture failed:', e);
-      Alert.alert('That shot did not go through', 'Try again.');
+      void notify('That shot did not go through', e instanceof Error ? e.message : 'Try again.');
     } finally {
       shooting.current = false;
     }
@@ -234,17 +234,19 @@ export function CameraScreen() {
 
   captureRef.current = capture;
 
-  const onPressPending = useCallback((item: PendingScan) => {
+  const onPressPending = useCallback(async (item: PendingScan) => {
     if (item.status !== 'failed') return;
-    Alert.alert('This scan did not go through', item.lastError ?? 'Unknown error.', [
-      {
-        text: 'Discard',
-        style: 'destructive',
-        onPress: () => useStore.getState().removePending(item.id),
-      },
-      { text: 'Leave it', style: 'cancel' },
-      { text: 'Try again', onPress: () => useStore.getState().retryPending(item.id) },
-    ]);
+    const choice = await ask<'leave' | 'retry' | 'discard'>(
+      'This scan did not go through',
+      item.lastError ?? 'Unknown error.',
+      [
+        { label: 'Leave it', value: 'leave', style: 'cancel' },
+        { label: 'Try again', value: 'retry' },
+        { label: 'Discard', value: 'discard', style: 'destructive' },
+      ],
+    );
+    if (choice === 'retry') useStore.getState().retryPending(item.id);
+    if (choice === 'discard') useStore.getState().removePending(item.id);
   }, []);
 
   // --- Render -------------------------------------------------------------
@@ -359,7 +361,7 @@ export function CameraScreen() {
               resultId: result.id,
             })
           }
-          onPressPending={onPressPending}
+          onPressPending={(item) => void onPressPending(item)}
         />
         <Text style={styles.readiness}>
           {settings.autoCapture ? readinessText : 'Tap to capture'}

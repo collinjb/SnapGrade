@@ -2,8 +2,8 @@
  *  average, the problems the class fell down on, and CSV export. */
 import { useCallback, useMemo, useState } from 'react';
 import {
-  Alert,
   FlatList,
+  Image,
   Pressable,
   StyleSheet,
   Text,
@@ -15,7 +15,9 @@ import { useNavigation, useRoute, type RouteProp } from '@react-navigation/nativ
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 import { MathText } from '@/components/MathText';
+import { useImageUri } from '@/lib/useImageUri';
 import { exportCsv, type CsvShape } from '@/lib/csv';
+import { ask, confirm, notify } from '@/lib/dialog';
 import { assignmentStats, computeTotals } from '@/lib/scoring';
 import { useStore } from '@/store/useStore';
 import { colors, radius, space } from '@/theme';
@@ -39,8 +41,16 @@ export function AssignmentSummaryScreen() {
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [exporting, setExporting] = useState(false);
+  /** Scan order matches the physical stack, which is what you want when
+   *  transcribing scores back onto the papers. Newest-first is better while
+   *  you are still scanning, so it stays the default. */
+  const [oldestFirst, setOldestFirst] = useState(false);
 
   const stats = useMemo(() => assignmentStats(results), [results]);
+  const ordered = useMemo(
+    () => (oldestFirst ? [...results].reverse() : results),
+    [oldestFirst, results],
+  );
 
   const onExport = useCallback(
     async (shape: CsvShape) => {
@@ -49,7 +59,7 @@ export function AssignmentSummaryScreen() {
       try {
         await exportCsv(assignment, results, shape);
       } catch (e) {
-        Alert.alert('Export failed', e instanceof Error ? e.message : String(e));
+        void notify('Export failed', e instanceof Error ? e.message : String(e));
       } finally {
         setExporting(false);
       }
@@ -58,15 +68,13 @@ export function AssignmentSummaryScreen() {
   );
 
   const onDelete = useCallback(
-    (result: ScanResult) => {
-      Alert.alert('Remove this paper?', `${result.studentName} will be taken out of the class average.`, [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: () => deleteResult(result.assignmentId, result.id),
-        },
-      ]);
+    async (result: ScanResult) => {
+      const yes = await confirm(
+        'Remove this paper?',
+        `${result.studentName} will be taken out of the class average.`,
+        { confirmLabel: 'Remove', destructive: true },
+      );
+      if (yes) deleteResult(result.assignmentId, result.id);
     },
     [deleteResult],
   );
@@ -82,7 +90,7 @@ export function AssignmentSummaryScreen() {
   return (
     <View style={styles.root}>
       <FlatList
-        data={results}
+        data={ordered}
         keyExtractor={(r) => r.id}
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         ListHeaderComponent={
@@ -163,43 +171,32 @@ export function AssignmentSummaryScreen() {
               </View>
             ) : null}
 
-            <Text style={styles.sectionLabel}>Students</Text>
+            <View style={styles.listHeader}>
+              <Text style={styles.sectionLabel}>Students</Text>
+              <View style={styles.spacer} />
+              {results.length > 1 ? (
+                <Pressable onPress={() => setOldestFirst((v) => !v)} hitSlop={8}>
+                  <Text style={styles.orderToggle}>
+                    {oldestFirst ? 'Scan order' : 'Newest first'}
+                  </Text>
+                </Pressable>
+              ) : null}
+            </View>
           </View>
         }
-        renderItem={({ item }) => {
-          const totals = computeTotals(item.problems);
-          const tint =
-            totals.percent >= 80
-              ? colors.correct
-              : totals.percent >= 60
-                ? colors.review
-                : colors.incorrect;
-          return (
-            <Pressable
-              style={styles.studentRow}
-              onPress={() =>
-                navigation.navigate('Results', {
-                  assignmentId: item.assignmentId,
-                  resultId: item.id,
-                })
-              }
-              onLongPress={() => onDelete(item)}
-            >
-              <Text style={[styles.studentName, item.studentNameIsPlaceholder && styles.dim]}>
-                {item.studentName}
-              </Text>
-              {totals.needsReview > 0 ? (
-                <View style={styles.reviewChip}>
-                  <Text style={styles.reviewChipText}>{totals.needsReview}</Text>
-                </View>
-              ) : null}
-              <Text style={[styles.studentScore, { color: tint }]}>
-                {totals.earned}/{totals.possible}
-              </Text>
-              <Text style={[styles.studentPercent, { color: tint }]}>{totals.percent}%</Text>
-            </Pressable>
-          );
-        }}
+        renderItem={({ item, index }) => (
+          <StudentRow
+            result={item}
+            position={oldestFirst ? index + 1 : results.length - index}
+            onOpen={() =>
+              navigation.navigate('Results', {
+                assignmentId: item.assignmentId,
+                resultId: item.id,
+              })
+            }
+            onDelete={() => void onDelete(item)}
+          />
+        )}
         ListEmptyComponent={
           <View style={styles.empty}>
             <Text style={styles.emptyTitle}>No papers yet</Text>
@@ -213,11 +210,13 @@ export function AssignmentSummaryScreen() {
           style={[styles.secondary, results.length === 0 && styles.disabled]}
           disabled={results.length === 0 || exporting}
           onPress={() => {
-            Alert.alert('Export CSV', 'Which shape do you need?', [
-              { text: 'Cancel', style: 'cancel' },
-              { text: 'Scores only', onPress: () => void onExport('summary') },
-              { text: 'Every problem', onPress: () => void onExport('detail') },
-            ]);
+            void ask<CsvShape | 'cancel'>('Export CSV', 'Which shape do you need?', [
+              { label: 'Cancel', value: 'cancel', style: 'cancel' },
+              { label: 'Scores only', value: 'summary' },
+              { label: 'Every problem', value: 'detail' },
+            ]).then((shape) => {
+              if (shape && shape !== 'cancel') void onExport(shape);
+            });
           }}
         >
           <Text style={styles.secondaryText}>{exporting ? 'Exporting…' : 'Export CSV'}</Text>
@@ -233,6 +232,62 @@ export function AssignmentSummaryScreen() {
         </Pressable>
       </View>
     </View>
+  );
+}
+
+/** One paper in the transcription list.
+ *
+ *  The thumbnail is the point: when you are working down a physical stack
+ *  writing scores on, a name like "Student 4" is useless but a glimpse of
+ *  the page is instant. */
+function StudentRow({
+  result,
+  position,
+  onOpen,
+  onDelete,
+}: {
+  result: ScanResult;
+  position: number;
+  onOpen: () => void;
+  onDelete: () => void;
+}) {
+  const totals = computeTotals(result.problems);
+  const thumb = useImageUri(result.imageUri);
+  const tint =
+    totals.percent >= 80
+      ? colors.correct
+      : totals.percent >= 60
+        ? colors.review
+        : colors.incorrect;
+
+  return (
+    <Pressable style={styles.studentRow} onPress={onOpen} onLongPress={onDelete}>
+      <Text style={styles.position}>{position}</Text>
+      {thumb ? (
+        <Image source={{ uri: thumb }} style={styles.thumb} resizeMode="cover" />
+      ) : (
+        <View style={styles.thumb} />
+      )}
+      <View style={styles.studentBody}>
+        <Text
+          style={[styles.studentName, result.studentNameIsPlaceholder && styles.dim]}
+          numberOfLines={1}
+        >
+          {result.studentName}
+        </Text>
+        {totals.needsReview > 0 ? (
+          <Text style={styles.reviewNote}>
+            {totals.needsReview} to check
+          </Text>
+        ) : null}
+      </View>
+      <View style={styles.scoreBlock}>
+        <Text style={[styles.studentScore, { color: tint }]}>
+          {totals.earned}/{totals.possible}
+        </Text>
+        <Text style={[styles.studentPercent, { color: tint }]}>{totals.percent}%</Text>
+      </View>
+    </Pressable>
   );
 }
 
@@ -325,36 +380,44 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
+  listHeader: { flexDirection: 'row', alignItems: 'center' },
+  spacer: { flex: 1 },
+  orderToggle: { fontSize: 13, fontWeight: '700', color: colors.accent },
   studentRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space.md,
     marginHorizontal: space.lg,
     marginBottom: space.sm,
-    paddingVertical: space.md,
-    paddingHorizontal: space.md,
+    padding: space.sm,
+    paddingRight: space.md,
     backgroundColor: colors.surface,
     borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
   },
-  studentName: { flex: 1, fontSize: 16, fontWeight: '600', color: colors.text },
-  reviewChip: {
-    minWidth: 22,
-    height: 22,
-    paddingHorizontal: 6,
-    borderRadius: 11,
-    backgroundColor: colors.review,
-    alignItems: 'center',
-    justifyContent: 'center',
+  position: {
+    minWidth: 20,
+    textAlign: 'center',
+    fontSize: 13,
+    fontWeight: '800',
+    color: colors.textDim,
+    fontVariant: ['tabular-nums'],
   },
-  reviewChipText: { color: '#fff', fontSize: 12, fontWeight: '800' },
-  studentScore: { fontSize: 16, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  thumb: {
+    width: 44,
+    height: 56,
+    borderRadius: radius.sm,
+    backgroundColor: colors.border,
+  },
+  studentBody: { flex: 1, gap: 2 },
+  studentName: { fontSize: 16, fontWeight: '600', color: colors.text },
+  reviewNote: { fontSize: 12, fontWeight: '700', color: colors.review },
+  scoreBlock: { alignItems: 'flex-end' },
+  studentScore: { fontSize: 18, fontWeight: '800', fontVariant: ['tabular-nums'] },
   studentPercent: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
-    minWidth: 44,
-    textAlign: 'right',
     fontVariant: ['tabular-nums'],
   },
 

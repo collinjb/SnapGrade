@@ -2,7 +2,6 @@
  *  every paper after it, and reachable only from the pill on the camera. */
 import { useCallback, useState } from 'react';
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -15,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
+import { confirm, notify } from '@/lib/dialog';
 import { processAnswerKey } from '@/lib/imaging';
 import { pickPageImage } from '@/lib/pickPageImage';
 import { useImageUri } from '@/lib/useImageUri';
@@ -71,7 +71,7 @@ export function AnswerKeyScreen() {
       setKeyImageBase64(processed.base64);
       setMode('scan');
     } catch (e) {
-      Alert.alert('Could not scan that', e instanceof Error ? e.message : String(e));
+      void notify('Could not scan that', e instanceof Error ? e.message : String(e));
     } finally {
       setScanning(false);
     }
@@ -84,11 +84,11 @@ export function AnswerKeyScreen() {
     }
 
     if (mode === 'typed' && typed.trim().length === 0) {
-      Alert.alert('No answers yet', 'Type at least one answer, or pick another mode.');
+      void notify('No answers yet', 'Type at least one answer, or pick another mode.');
       return;
     }
     if (mode === 'scan' && !keyImageBase64) {
-      Alert.alert('No key scanned', 'Scan the completed answer key, or pick another mode.');
+      void notify('No key scanned', 'Scan the completed answer key, or pick another mode.');
       return;
     }
 
@@ -186,20 +186,15 @@ export function AnswerKeyScreen() {
         <Pressable
           style={styles.newAssignment}
           onPress={() => {
-            Alert.alert(
+            void confirm(
               'Start a new assignment?',
               'Papers you scan next go into a fresh one. The papers you already scanned stay where they are.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Start new',
-                  onPress: () => {
-                    startNewAssignment();
-                    navigation.goBack();
-                  },
-                },
-              ],
-            );
+              { confirmLabel: 'Start new' },
+            ).then((yes) => {
+              if (!yes) return;
+              startNewAssignment();
+              navigation.goBack();
+            });
           }}
         >
           <Text style={styles.newAssignmentText}>Start a new assignment</Text>

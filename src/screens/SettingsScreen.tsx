@@ -1,10 +1,9 @@
 /** Settings, deliberately short: grading behaviour, capture behaviour, and
  *  the account upgrade. Anything that belongs on the capture path lives on the
  *  camera screen instead. */
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Linking } from 'react-native';
 import {
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -21,6 +20,7 @@ import { pump, queueCounts, retryAllFailed } from '@/lib/gradeFlow';
 import { nativeScannerAvailable } from '@/lib/nativeScanner';
 import { skiaAvailable } from '@/lib/pageRender';
 import { getApiKey, maskKey, setApiKey } from '@/lib/apiKeys';
+import { confirm } from '@/lib/dialog';
 import { DEFAULT_PROVIDER, PROVIDER_LIST, getProvider } from '@/lib/grading';
 import { storageBackend } from '@/lib/storage';
 import { useStore } from '@/store/useStore';
@@ -37,31 +37,41 @@ export function SettingsScreen() {
   const provider = getProvider(settings.provider ?? DEFAULT_PROVIDER);
   const [keyDraft, setKeyDraft] = useState('');
   const [editingKey, setEditingKey] = useState(false);
-  const storedKey = getApiKey(provider.id);
+  // `getApiKey` reads device storage, which React cannot observe, so a save
+  // has to bump this to force the masked view to re-read.
+  const [keyRevision, setKeyRevision] = useState(0);
+  const [keyStatus, setKeyStatus] = useState<{ tone: 'ok' | 'warn' | 'error'; text: string } | null>(
+    null,
+  );
+  const storedKey = useMemo(() => getApiKey(provider.id), [provider.id, keyRevision]);
 
   const saveKey = useCallback(() => {
     const next = keyDraft.trim();
-    if (next && !provider.looksLikeKey(next)) {
-      Alert.alert(
-        'That does not look right',
-        `A ${provider.label} key ${provider.keyHint.toLowerCase()}. Save it anyway?`,
-        [
-          { text: 'Let me fix it', style: 'cancel' },
-          {
-            text: 'Save anyway',
-            onPress: () => {
-              setApiKey(provider.id, next);
-              setEditingKey(false);
-              setKeyDraft('');
-            },
-          },
-        ],
-      );
+
+    // Never fail silently. The previous version bailed into a confirm dialog
+    // that react-native-web renders as nothing at all, so on the web the
+    // button simply appeared dead.
+    if (!next) {
+      setKeyStatus({ tone: 'error', text: 'Paste your key into the box first.' });
       return;
     }
+
     setApiKey(provider.id, next);
+    setKeyRevision((n) => n + 1);
     setEditingKey(false);
     setKeyDraft('');
+
+    // The format check is a hint, not a gate: key formats change, and being
+    // locked out by my regex is far worse than one wrong-looking key that
+    // the first scan will reject with a clear message anyway.
+    setKeyStatus(
+      provider.looksLikeKey(next)
+        ? { tone: 'ok', text: 'Saved. Point the camera at a paper.' }
+        : {
+            tone: 'warn',
+            text: `Saved. Heads up: ${provider.label} keys normally start with ${provider.keyPrefix}.`,
+          },
+    );
   }, [keyDraft, provider]);
 
   return (
@@ -187,7 +197,12 @@ export function SettingsScreen() {
                 style={styles.keyInput}
               />
               <View style={styles.keyActions}>
-                <Pressable style={styles.smallButton} onPress={saveKey}>
+                <Pressable
+                  style={styles.smallButton}
+                  onPress={saveKey}
+                  accessibilityRole="button"
+                  accessibilityLabel="Save API key"
+                >
                   <Text style={styles.smallButtonText}>Save key</Text>
                 </Pressable>
                 <Pressable
@@ -218,24 +233,35 @@ export function SettingsScreen() {
               </Pressable>
               <Pressable
                 style={styles.linkButton}
-                onPress={() =>
-                  Alert.alert('Remove this key?', 'Grading stops until you add another.', [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Remove',
-                      style: 'destructive',
-                      onPress: () => {
-                        setApiKey(provider.id, '');
-                        setEditingKey(true);
-                      },
-                    },
-                  ])
-                }
+                onPress={() => {
+                  void confirm('Remove this key?', 'Grading stops until you add another.', {
+                    confirmLabel: 'Remove',
+                    destructive: true,
+                  }).then((yes) => {
+                    if (!yes) return;
+                    setApiKey(provider.id, '');
+                    setKeyRevision((n) => n + 1);
+                    setEditingKey(true);
+                    setKeyStatus(null);
+                  });
+                }}
               >
                 <Text style={[styles.linkButtonText, { color: colors.incorrect }]}>Remove</Text>
               </Pressable>
             </View>
           )}
+          {keyStatus ? (
+            <Text
+              style={[
+                styles.keyStatus,
+                keyStatus.tone === 'ok' && { color: colors.correct },
+                keyStatus.tone === 'warn' && { color: colors.review },
+                keyStatus.tone === 'error' && { color: colors.incorrect },
+              ]}
+            >
+              {keyStatus.text}
+            </Text>
+          ) : null}
         </View>
       </Section>
 
@@ -259,20 +285,15 @@ export function SettingsScreen() {
             </Pressable>
             <Pressable
               style={styles.action}
-              onPress={() =>
-                Alert.alert(
+              onPress={() => {
+                void confirm(
                   'Discard failed scans?',
                   `${counts.failed} ${counts.failed === 1 ? 'scan' : 'scans'} will be deleted without being graded.`,
-                  [
-                    { text: 'Cancel', style: 'cancel' },
-                    {
-                      text: 'Discard',
-                      style: 'destructive',
-                      onPress: () => useStore.getState().clearFailedPending(),
-                    },
-                  ],
-                )
-              }
+                  { confirmLabel: 'Discard', destructive: true },
+                ).then((yes) => {
+                  if (yes) useStore.getState().clearFailedPending();
+                });
+              }}
             >
               <Text style={[styles.actionText, { color: colors.incorrect }]}>
                 Discard failed scans
@@ -283,20 +304,15 @@ export function SettingsScreen() {
 
         <Pressable
           style={styles.action}
-          onPress={() =>
-            Alert.alert(
+          onPress={() => {
+            void confirm(
               'Clear everything?',
               'Every assignment, grade and queued scan on this device is deleted. Your settings and API key are kept.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Clear',
-                  style: 'destructive',
-                  onPress: () => useStore.getState().clearEverything(),
-                },
-              ],
-            )
-          }
+              { confirmLabel: 'Clear', destructive: true },
+            ).then((yes) => {
+              if (yes) useStore.getState().clearEverything();
+            });
+          }}
         >
           <Text style={[styles.actionText, { color: colors.incorrect }]}>Clear everything</Text>
         </Pressable>
@@ -445,6 +461,7 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   keyActions: { flexDirection: 'row', gap: space.sm, alignItems: 'center' },
+  keyStatus: { fontSize: 13, fontWeight: '600', marginTop: 2 },
   keyMask: {
     fontSize: 14,
     color: colors.textDim,

@@ -57,8 +57,10 @@ export interface Provider {
   id: ProviderId;
   label: string;
   defaultModel: string;
-  /** Shown next to the key field in Settings. */
+  /** Placeholder text for the key field. */
   keyHint: string;
+  /** The literal prefix real keys carry, quoted verbatim in warnings. */
+  keyPrefix: string;
   /** Where to go and get one. */
   keyUrl: string;
   /** Cheap sanity check before we bother making a request. */

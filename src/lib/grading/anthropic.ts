@@ -32,6 +32,7 @@ export const anthropicProvider: Provider = {
   label: 'Anthropic Claude',
   defaultModel: DEFAULT_MODEL,
   keyHint: 'Starts with sk-ant-',
+  keyPrefix: 'sk-ant-',
   keyUrl: 'https://console.anthropic.com/settings/keys',
 
   looksLikeKey(key) {

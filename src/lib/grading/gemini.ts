@@ -88,6 +88,7 @@ export const geminiProvider: Provider = {
   label: 'Google Gemini',
   defaultModel: DEFAULT_MODEL,
   keyHint: 'Starts with AIza',
+  keyPrefix: 'AIza',
   keyUrl: 'https://aistudio.google.com/apikey',
 
   looksLikeKey(key) {

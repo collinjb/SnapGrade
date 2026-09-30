@@ -5,6 +5,7 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ActivityIndicator, View } from 'react-native';
 
+import { DialogHost } from '@/components/DialogHost';
 import { CameraScreen } from '@/screens/CameraScreen';
 import { ResultsScreen } from '@/screens/ResultsScreen';
 import { AssignmentSummaryScreen } from '@/screens/AssignmentSummaryScreen';
@@ -94,6 +95,8 @@ export default function App() {
           />
         </Stack.Navigator>
       </NavigationContainer>
+      {/* Above the navigator so a dialog covers whichever screen is up. */}
+      <DialogHost />
     </SafeAreaProvider>
   );
 }

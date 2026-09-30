@@ -494,6 +494,10 @@ plain Node with no simulator, emulator or mocking framework.
 - **Per-frame work never touches React.** The overlay and shutter ring are
   driven through imperative handles onto `Animated.Value`s; detections land in
   refs. Nothing in the capture path causes a render.
+- **Dialogs are in-app, not the platform's.** React Native's `Alert` is a
+  no-op stub under react-native-web — it does not throw, it just does
+  nothing — so every confirm in the app silently failed in a browser.
+  `DialogHost` renders one modal for both platforms instead.
 - **Nothing modal on the capture path.** No confirm, no retake prompt, no
   full-screen progress. The only acknowledgement a capture gets is a flash,
   a haptic and a new chip — which is all you need when the next paper is
